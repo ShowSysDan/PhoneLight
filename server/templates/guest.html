@@ -11,7 +11,7 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none
 #c{position:fixed;inset:0;background:#000;display:grid}
 #go{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
   padding:24px;color:#fff;font:16px/1.4 system-ui,-apple-system,sans-serif;text-align:center;background:#000}
-/* wordmark: white core, layered RGB halo; the whole halo cycles hue (one compositor-friendly filter, no JS) */
+/* wordmark: white core, RGB halo; the halo cycles hue (one filter, no JS). hue has steps: 0 and 360deg look alike to some engines */
 #go:before{content:'';position:absolute;left:50%;top:38%;width:140vw;height:60vh;transform:translate(-50%,-50%);
   background:radial-gradient(closest-side,rgba(255,43,214,.28),rgba(122,92,255,.14) 45%,transparent 75%);
   animation:hue 6s linear infinite;pointer-events:none}
@@ -23,7 +23,7 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none
 #go div,#go small{position:relative}
 #go button{position:relative;font:inherit;font-size:20px;font-weight:600;color:#000;background:#fff;border:0;border-radius:40px;
   padding:16px 40px;box-shadow:0 0 18px #ff2bd6,0 0 42px #7a5cff;animation:hue 6s linear infinite}
-@keyframes hue{to{filter:hue-rotate(360deg)}}
+@keyframes hue{0%{filter:hue-rotate(0deg)}33%{filter:hue-rotate(120deg)}67%{filter:hue-rotate(240deg)}to{filter:hue-rotate(360deg)}}
 @keyframes breathe{from{opacity:.86}to{opacity:1}}
 @media (prefers-reduced-motion:reduce){ #go:before,#w,#go button{animation:none} }
 #go small{max-width:340px;color:#999;font-size:12px}
