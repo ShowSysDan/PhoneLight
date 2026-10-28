@@ -135,6 +135,17 @@ Take glow.lighting off the gateway. 321T and anything else stay up:
 sudo bash /opt/glow-gateway-src/gateway/install.sh --remove
 ```
 
+## Troubleshooting
+
+| What you see | Meaning | Fix |
+|---|---|---|
+| `curl -sI https://glow.lighting/` gives **`HTTP/2 503`** | HTTPS works; Caddy can't reach the glow server, so it shows the "getting ready" page | From the VPS: `curl -s --max-time 4 http://10.201.2.102:5420/healthz`. A timeout or refusal means the tunnel / building firewall rule for TCP 5420 is missing, or the `phonelight` service isn't running |
+| Caddy log: **`challenge failed` for `www.…`** (`Cannot negotiate ALPN`, or `Fetching https://glow.lighting/`) | `www` doesn't point at the VPS. Usually the registrar's "URL forwarding" for www | Give `www` an A record to the VPS (and turn the forwarding off), or re-run the installer with `--no-www` |
+| Caddy log: `caddy_legacy_user_removed` (ZeroSSL) | Caddy 2.6 trying its backup certificate provider after another failure | Noise: fix the failure before it (usually the www one above) |
+| No certificate at all, `glow.lighting` itself failing | DNS for `glow.lighting` isn't pointing at the VPS yet, or 80/443 are blocked | `dig +short glow.lighting` should show the VPS's IP; Caddy retries by itself |
+
+Caddy's log: `sudo journalctl -u caddy -n 50 --no-pager`.
+
 ## Good to know
 
 - **Stopping Caddy stops every site on it.** That includes 321T's documented

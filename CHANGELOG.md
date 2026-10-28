@@ -5,6 +5,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/). Every change
 ships as its own version: the top section always matches `VERSION`.
 
+## [0.5.1] - 2026-10-28
+
+### Fixed
+- `gateway/install.sh` stopped silently at its DNS check when the site name
+  did not resolve (`set -o pipefail` + a failing `getent`), skipping the rest
+  of the summary. Now it reports the name as not resolving and carries on.
+
+### Added
+- The gateway installer checks that `www.<site>` points at the same server as
+  the site (a registrar's "URL forwarding" for www stops Caddy getting www's
+  certificate) and suggests `--no-www` if not. The unreachable-glow-server
+  warning now says guests get the "getting ready" page (HTTP 503) until it is
+  fixed.
+- gateway/README.md: a **Troubleshooting** table (503, www certificate
+  failures, the ZeroSSL `caddy_legacy_user_removed` noise, no certificate).
+
+Redeploy the gateway: `cd /opt/glow-gateway-src && sudo git pull && sudo bash gateway/install.sh`.
+The glow server is unchanged.
+
 ## [0.5.0] - 2026-10-28
 
 ### Added
