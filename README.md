@@ -1,6 +1,6 @@
 # glow.lighting
 
-Version **0.7.0** · see [CHANGELOG.md](CHANGELOG.md)
+Version **0.8.0** · see [CHANGELOG.md](CHANGELOG.md)
 
 > **glow.lighting** is the product name: it is what guests and the admin
 > see. The code name **PhoneLight** stays for the repo, the folder
@@ -24,6 +24,7 @@ RGB, like a pixel bar.
 - [Install (step by step)](#install-step-by-step)
 - [Console setup](#console-setup)
 - [Using the admin](#using-the-admin)
+- [Blocking a device](#blocking-a-device)
 - [Testing without a console](#testing-without-a-console)
 - [Keeping phones in sync](#keeping-phones-in-sync)
 - [Finding a delay](#finding-a-delay)
@@ -215,7 +216,7 @@ same priority to merge them HTP.
 |---|---|
 | **Live** | Phones connected, average round-trip latency, output frames/s, sACN rate; a live swatch per fixture with its phone count (with cells, laid out like the phones' screens). Output buttons: **Live sACN**, **Identify** (every fixture a different colour, to check groups), **Blackout**, **Rebalance groups**. A **warning** appears when phones sit in a fixture group whose channels have stayed at 0 since sACN started: almost always a patch problem (the group isn't in the cue). **Test tools:** manual colour (all fixtures, click one fixture, or click one cell) and patterns (chase / flash / rainbow); see [Testing without a console](#testing-without-a-console). Overrides and tests are not saved: a restart goes back to Live sACN. |
 | **sACN monitor** | Listening address, packet counts, every source (name, IP, priority, fps, out-of-order packets, CID), the 512 levels (fixture channels outlined R/G/B; hover a cell for fixture and colour). **Timing** (see [Finding a delay](#finding-a-delay)): how long packets waited before the app read them, how long the app took to hand the colours to the phones, and stale packets skipped. |
-| **Clients** | Phones connected now (fixture, IP, device, OS, browser, connected time, last and average latency). Client log: every browser seen, visits, total time, average latency, device details; click one for its sessions. *Clear log* deletes the history. |
+| **Clients** | Phones connected now (fixture, IP, device, OS, browser, connected time, last and average latency), each with **Kick** / **Block** / **Block IP**. **Blocked** list (add by client id or IP, with a note; *Unblock*). Client log: every browser seen, visits, total time, average latency, device details; click one for its sessions, or *Block* it. *Clear log* deletes the history. See [Blocking a device](#blocking-a-device). |
 | **Settings** | Universe, start address, fixtures, 8/16-bit, cells per fixture and their columns, master dimmer, sync delay, signal-loss hold and fade, how long client data is kept. Applied live, no restart. |
 
 The header always shows the sACN state, how many phones are connected and,
@@ -226,6 +227,29 @@ readout that disappears after 6 s: its fixture, connected or reconnecting,
 round trip, sync accuracy, frames per second, current colour and the first
 characters of its client id (to find it on the Clients page). Handy for
 checking a phone in the crowd without the admin.
+
+## Blocking a device
+
+On the **Clients** page:
+
+- **Kick** disconnects a phone. It reconnects by itself a few seconds later
+  (and may land in another fixture group), so it is a reset, not a ban.
+- **Block** (client id) disconnects it at once, and every time it tries
+  again it is refused. The phone goes black with "This device can't join the
+  show" and stops reconnecting. Blocks are kept in the database, so they
+  survive a restart, until you press *Unblock*. You can also type a client
+  id (the one printed bottom right on the phone) into the Blocked form.
+- **Block IP** refuses every phone on that address. Behind a venue Wi-Fi or
+  a mobile network's NAT many guests share one address, so this can block a
+  whole crowd. Use it only for a lone device on its own address.
+
+A client id is per browser: someone who clears their browser data (or uses
+private browsing) comes back with a new id and has to be blocked again. Web
+pages cannot see a phone's MAC address or a hardware id (see
+[What is logged about guests](#what-is-logged-about-guests)).
+
+The block check runs once per connection, against an in-memory copy of the
+list, so it costs the show nothing.
 
 ## Testing without a console
 
@@ -459,6 +483,7 @@ server/
   hub.py         guests, fixture assignment, fan-out, pings, reaper
   tracker.py     client/session log (batched writes), UA parsing, purge
   settings.py    show settings: definitions, validation, live apply
+  blocks.py      blocked devices (client id / IP), checked on connect
   db.py          SQLite access     migrate.py + migrations/   schema
   templates/     guest.html (the phone page) + admin pages
   static/        admin CSS/JS, bundled fonts, keepawake.mp4

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 from sacn_packets import packet
-from simple_websocket import Client
+from simple_websocket import Client, ConnectionClosed
 
 from server import tracker
 
@@ -164,6 +164,80 @@ def test_cells_to_phone(server):
         ws.close()
         post(server, '/admin/api/mode', {'mode': 'sacn'})
         post(server, '/admin/api/settings', {'cells': 1, 'cell_columns': 1})
+
+
+def test_kick_and_block(server):
+    url = server['base'].replace('http', 'ws') + '/ws'
+
+    def join(cid):
+        ws = Client.connect(url)
+        ws.send(json.dumps({'id': cid}))
+        return ws
+
+    def shut(ws):
+        try:
+            ws.close()
+        except ConnectionClosed:                                # the server closed it already
+            pass
+
+    def until(ws, want):
+        for _ in range(40):
+            try:
+                m = ws.receive(timeout=0.5)
+                if isinstance(m, str) and m.startswith(want):
+                    return True
+            except ConnectionClosed:
+                return False
+        return False
+
+    def live_sid(cid):
+        for _ in range(30):                                     # the connected list is on the admin feed
+            snap = {}
+            adm = Client.connect(server['base'].replace('http', 'ws') + '/ws/admin')
+            try:
+                adm.send(json.dumps({'views': ['guests']}))
+                for _ in range(20):
+                    snap = json.loads(adm.receive(timeout=1))
+                    if 'guests' in snap:
+                        break
+            finally:
+                adm.close()
+            for g in snap.get('guests', {}).get('guests', []):
+                if g['client_id'] == cid:
+                    return g['sid']
+            time.sleep(0.2)
+        raise AssertionError('guest not listed')
+
+    ws = join('kick-test-0001')
+    try:
+        assert until(ws, 'f')
+        assert post(server, '/admin/api/clients/kick', {'sid': live_sid('kick-test-0001')})[1]['kicked'] == 1
+        assert until(ws, 'k')
+    finally:
+        shut(ws)
+
+    ws = join('block-test-0001')
+    try:
+        assert until(ws, 'f')
+        status, body = post(server, '/admin/api/blocks', {'kind': 'client', 'value': 'block-test-0001', 'note': 't'})
+        assert status == 200 and body['kicked'] == 1
+        assert until(ws, 'x')
+    finally:
+        shut(ws)
+    ws = join('block-test-0001')                               # refused at once on reconnect
+    try:
+        assert ws.receive(timeout=3) == 'x'
+    finally:
+        shut(ws)
+    assert post(server, '/admin/api/blocks', {'kind': 'ip', 'value': 'not-an-ip'})[0] == 400
+    rows = json.loads(get(server, '/admin/api/blocks')[1])['rows']
+    assert rows[0]['value'] == 'block-test-0001' and rows[0]['refused'] == 1
+    assert post(server, '/admin/api/blocks/remove', {'kind': 'client', 'value': 'block-test-0001'})[0] == 200
+    ws = join('block-test-0001')
+    try:
+        assert ws.receive(timeout=3).startswith('f')             # welcome back
+    finally:
+        shut(ws)
 
 
 def test_settings_validation(server):

@@ -39,6 +39,8 @@ Wire format (kept tiny on purpose):
                     text 'f<n>'     your fixture is n (kept for reconnects)
                     text 'l<cells>,<columns>'  screen layout: that many cells, that many side
                                     by side, the rest in rows below (sent before colours)
+                    text 'x'        you are blocked: the server closes, don't reconnect
+                    text 'k'        you were disconnected by the admin (reconnect as usual)
                     text 's<c0>,<t1>,<t2>'  clock sync reply: the guest's send time
                                     c0, our receive time t1 and send time t2 (ms)
   guest -> server   text JSON       hello (first message): id + device info
@@ -75,7 +77,7 @@ _SYNC = re.compile(r'^s\d{1,12}(\.\d{1,4})?$')
 class Guest:
     __slots__ = ('sid', 'client_id', 'ip', 'info', 'fixture', 'told', 'told_layout', 'connected_at', 'raw', 'wake',
                  'closer', 'dirty', 'busy', 'busy_since', 'pending', 'ping_seq', 'ping_at', 'last_pong',
-                 'lat_n', 'lat_sum', 'lat_min', 'lat_max', 'lat_last', 'alive', 'why', 'sync')
+                 'lat_n', 'lat_sum', 'lat_min', 'lat_max', 'lat_last', 'alive', 'why', 'sync', 'bye')
 
     def __init__(self, sid, client_id, ip, info, raw=None, closer=None):
         self.sid, self.client_id, self.ip, self.info = sid, client_id, ip, info
@@ -90,6 +92,7 @@ class Guest:
         self.lat_n, self.lat_sum, self.lat_min, self.lat_max, self.lat_last = 0, 0.0, None, None, None
         self.alive, self.why = True, None   # why: set when the server ends it
         self.sync = None                    # (c0 text, t1) of an unanswered sync request
+        self.bye = None                     # last message before the server closes ('x' / 'k'), see Hub.kick
 
     def pong(self, text, now=None):
         """Record a pong; returns the round trip in ms or None."""
@@ -256,6 +259,9 @@ class Hub:
         frame, written to the socket as-is), str (sent as a WebSocket text
         message) or None. Colour first: it is what the guest is there for."""
         now = now or time.monotonic()
+        if guest.bye is not None:                 # kicked / blocked: say so, then the sender ends
+            guest.alive = False
+            return guest.bye
         if guest.sync is not None:                # time-critical: t2 is stamped right here
             (c0, t1), guest.sync = guest.sync, None
             return f's{c0},{t1:.1f},{server_ms():.1f}'
@@ -303,6 +309,17 @@ class Hub:
                         g.closer()
                     except OSError:
                         pass
+
+    def kick(self, match, bye='k', why='kicked by admin'):
+        """Disconnect every guest for which match(guest) is true; returns how
+        many. Its own sender sends `bye` and ends (one writer per socket); a
+        sender stuck mid-write is closed by the reaper as usual."""
+        with self.lock:
+            guests = [g for g in self.guests.values() if match(g)]
+        for g in guests:
+            g.bye, g.why = bye, why
+            g.wake.set()
+        return len(guests)
 
     def start(self):
         threading.Thread(target=self._reaper, name='hub-reaper', daemon=True).start()

@@ -223,3 +223,14 @@ def test_fast_path_waits_until_the_phone_knows_the_layout():
     finally:
         a.close()
         b.close()
+
+
+def test_kick_sends_bye_then_the_sender_ends():
+    h = Hub(1)
+    a, b = guest(1), guest(2)
+    h.join(a)
+    h.join(b)
+    assert h.kick(lambda g: g.sid == 's1', bye='x', why='blocked by admin') == 1
+    out = []
+    assert h.serve(a, out.append, out.append) == 'blocked by admin'
+    assert out == ['x'] and b.bye is None and b.alive

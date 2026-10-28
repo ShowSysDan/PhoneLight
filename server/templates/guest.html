@@ -54,7 +54,7 @@ var m=document.cookie.match(/(?:^|; )pl_id=([\w-]+)/);
 var id=get('pl_id')||(m&&m[1]);
 if(!id){id='';var a='abcdefghijklmnopqrstuvwxyz0123456789';for(var i=0;i<24;i++)id+=a[Math.random()*36|0]}
 put('pl_id',id);var nid=document.getElementById('n');nid.textContent=id;document.cookie='pl_id='+id+';max-age=31536000;path=/;samesite=lax';
-var ws,tries=0,blackT,lockS,last=0,syncT,nsync=0;
+var ws,tries=0,blackT,lockS,last=0,syncT,nsync=0,gone;
 // Sync: frames carry "show at server ms" (uint32). off = server clock - our clock, from
 // NTP-style samples; keep the lowest-round-trip of the last 8. q = frames waiting for their time.
 var off=null,samples=[],q=[],now=function(){return performance.now()};
@@ -101,11 +101,11 @@ function connect(){
   ws.onmessage=function(e){
     var d=e.data;last=Date.now();
     if(typeof d!='string')return frame(new Uint8Array(d));
-    if(d[0]=='p')ws.send(d);else if(d[0]=='s')synced(d);else if(d[0]=='f'){fx=d.slice(1);put('pl_fx',fx)}
+    if(d=='x')gone=1;else if(d[0]=='p')ws.send(d);else if(d[0]=='s')synced(d);else if(d[0]=='f'){fx=d.slice(1);put('pl_fx',fx)}
     else if(d[0]=='l'){var p=d.slice(1).split(',');if(+p[0]>0)layout(+p[0],+p[1]||1)}
   };
   ws.onclose=function(){
-    ws=null;clearTimeout(syncT);clearTimeout(blackT);blackT=setTimeout(black,3000);st.textContent='reconnecting…';
+    ws=null;clearTimeout(syncT);clearTimeout(blackT);if(gone){black();st.textContent='This device can\u2019t join the show.';return}blackT=setTimeout(black,3000);st.textContent='reconnecting…';
     // back off with jitter so a server restart is not hit by every phone at once
     setTimeout(connect,Math.min(5000,500*++tries)+Math.random()*2000);
   };

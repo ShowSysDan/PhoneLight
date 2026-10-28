@@ -8,11 +8,29 @@
   <div class="card stat"><div class="k">Log writer</div><div class="v" id="s-queue">–</div><div class="s" id="s-dropped"></div></div>
 </div>
 
-<div class="section-header"><div class="section-title">Connected now</div><span class="dim small">newest first, up to 500</span></div>
+<div class="section-header"><div class="section-title">Connected now</div><span class="dim small">newest first, up to 500 · <b>Kick</b> disconnects (the phone rejoins by itself), <b>Block</b> keeps it out</span></div>
 <div class="card table-wrap">
-  <table><thead><tr><th>Client</th><th>Fixture</th><th>IP</th><th>Device</th><th>OS</th><th>Browser</th><th>Connected</th><th>Latency</th><th>Avg</th></tr></thead>
+  <table><thead><tr><th>Client</th><th>Fixture</th><th>IP</th><th>Device</th><th>OS</th><th>Browser</th><th>Connected</th><th>Latency</th><th>Avg</th><th></th></tr></thead>
   <tbody id="live"></tbody></table>
 </div>
+<div class="msg" id="msg" style="margin-top:8px"></div>
+
+<div class="section-header">
+  <div class="section-title">Blocked</div>
+  <div class="row">
+    <select id="b-kind"><option value="client">Client id</option><option value="ip">IP address</option></select>
+    <input id="b-value" placeholder="client id or IP" class="mono">
+    <input id="b-note" placeholder="note (optional)">
+    <button id="b-add" class="danger">Block</button>
+  </div>
+</div>
+<div class="card table-wrap">
+  <table><thead><tr><th>Blocked</th><th>Value</th><th>Note</th><th>Since</th><th>Refused since restart</th><th></th></tr></thead>
+  <tbody id="blocks"></tbody></table>
+</div>
+<div class="dim small" style="margin-top:8px">A blocked phone is disconnected at once and shown "This device can't join the show"; it stops reconnecting.
+  A client id is per browser: clearing the browser's data gets a new one. An IP block also refuses everyone else on that address
+  (behind a venue Wi-Fi's NAT, that can be the whole crowd).</div>
 
 <div class="section-header">
   <div class="section-title">Client log</div>
@@ -24,7 +42,7 @@
 </div>
 <div class="card table-wrap">
   <table><thead><tr><th>Client</th><th>Last seen</th><th>First seen</th><th>Visits</th><th>Total time</th><th>Avg latency</th><th>Last IP</th>
-    <th>Device</th><th>OS</th><th>Browser</th><th>Screen</th><th>Lang / TZ</th></tr></thead>
+    <th>Device</th><th>OS</th><th>Browser</th><th>Screen</th><th>Lang / TZ</th><th></th></tr></thead>
   <tbody id="log"></tbody></table>
 </div>
 <div class="dim small" style="margin-top:8px">Click a client for its sessions. Showing the 200 most recent.</div>
@@ -41,9 +59,46 @@
     setText($('s-now-lat'), g.latency_avg == null ? '' : `avg ${num(g.latency_avg)} ms round trip`);
     setHTML($('live'), g.guests.length ? g.guests.map((r) => `<tr><td class="mono" title="${esc(r.client_id)}">${short(r.client_id)}</td>` +
       `<td>${r.fixture}</td><td class="mono">${esc(r.ip)}</td><td>${esc(r.device)}</td><td>${esc(r.os)}</td><td>${esc(r.browser)}</td>` +
-      `<td class="mono">${duration(r.seconds)}</td><td class="mono">${num(r.latency)} ms</td><td class="mono">${num(r.latency_avg)} ms</td></tr>`).join('')
-      : '<tr><td colspan="9" class="empty">No phones connected.</td></tr>');
+      `<td class="mono">${duration(r.seconds)}</td><td class="mono">${num(r.latency)} ms</td><td class="mono">${num(r.latency_avg)} ms</td>` +
+      `<td class="nowrap"><button class="small" data-kick="${esc(r.sid)}">Kick</button> ` +
+      `<button class="small danger" data-block="client" data-value="${esc(r.client_id)}">Block</button> ` +
+      `<button class="small danger" data-block="ip" data-value="${esc(r.ip)}" title="Everyone on this IP">Block IP</button></td></tr>`).join('')
+      : '<tr><td colspan="10" class="empty">No phones connected.</td></tr>');
   });
+
+  const msg = (t, ok) => { $('msg').className = 'msg ' + (ok ? 'ok' : 'bad'); $('msg').textContent = t; };
+  let blocked = new Set();
+  async function loadBlocks() {
+    const d = await api('/admin/api/blocks');
+    blocked = new Set(d.rows.filter((r) => r.kind === 'client').map((r) => r.value));
+    setHTML($('blocks'), d.rows.length ? d.rows.map((r) => `<tr><td>${r.kind === 'ip' ? 'IP' : 'Client'}</td>` +
+      `<td class="mono">${esc(r.value)}</td><td>${esc(r.note)}</td><td>${when(r.created_at)}</td><td class="mono">${r.refused}</td>` +
+      `<td><button class="small" data-unblock="${esc(r.kind)}" data-value="${esc(r.value)}">Unblock</button></td></tr>`).join('')
+      : '<tr><td colspan="6" class="empty">Nobody is blocked.</td></tr>');
+  }
+  async function block(kind, value, note) {
+    if (kind === 'ip' && !confirm(`Block every phone on ${value}? Behind a shared Wi-Fi (NAT) that can be many guests.`)) return;
+    try {
+      const r = await api('/admin/api/blocks', { kind, value, note });
+      msg(`Blocked ${kind === 'ip' ? 'IP' : 'client'} ${r.value}` + (r.kicked ? ` (${r.kicked} disconnected)` : ''), true);
+    } catch (e) { msg(e.message); }
+    loadBlocks().then(load);
+  }
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-kick], button[data-block], button[data-unblock]');
+    if (!b) return;
+    e.stopPropagation();
+    if (b.dataset.kick) {
+      const r = await api('/admin/api/clients/kick', { sid: b.dataset.kick }).catch((err) => msg(err.message));
+      if (r) msg(r.kicked ? 'Disconnected; it will rejoin by itself.' : 'Already gone.', true);
+    } else if (b.dataset.block) {
+      block(b.dataset.block, b.dataset.value, '');
+    } else {
+      await api('/admin/api/blocks/remove', { kind: b.dataset.unblock, value: b.dataset.value }).catch((err) => msg(err.message));
+      loadBlocks().then(load);
+    }
+  }, true);
+  $('b-add').onclick = () => block($('b-kind').value, $('b-value').value.trim(), $('b-note').value.trim());
 
   let open = null;
   async function load() {
@@ -59,8 +114,9 @@
     setHTML($('log'), d.rows.length ? d.rows.map((r) => `<tr class="click" data-id="${esc(r.id)}"><td class="mono" title="${esc(r.id)}">${short(r.id)}</td>` +
       `<td>${when(r.last_seen)}</td><td>${when(r.first_seen)}</td><td class="mono">${r.visits}</td><td class="mono">${duration(r.total_seconds)}</td>` +
       `<td class="mono">${num(r.latency_avg)} ms</td><td class="mono">${esc(r.last_ip)}</td><td>${esc(r.device)}</td><td>${esc(r.os)}</td>` +
-      `<td>${esc(r.browser)}</td><td class="mono">${esc(r.screen)}</td><td>${esc(r.language)} · ${esc(r.timezone)}</td></tr>`).join('')
-      : '<tr><td colspan="12" class="empty">Nothing logged yet.</td></tr>');
+      `<td>${esc(r.browser)}</td><td class="mono">${esc(r.screen)}</td><td>${esc(r.language)} · ${esc(r.timezone)}</td>` +
+      `<td>${blocked.has(r.id) ? '<span class="dim small">blocked</span>' : `<button class="small danger" data-block="client" data-value="${esc(r.id)}">Block</button>`}</td></tr>`).join('')
+      : '<tr><td colspan="13" class="empty">Nothing logged yet.</td></tr>');
     open = null;
   }
   $('log').onclick = async (e) => {
@@ -74,7 +130,7 @@
       `<td>fx ${s.fixture ?? '–'}</td><td class="mono">${duration(s.seconds)}</td><td class="mono">${num(s.latency_avg)} ms</td>` +
       `<td class="mono">${esc(s.ip)}</td><td colspan="5" class="dim">${s.latency_samples} pings · min ${num(s.latency_min)} / max ${num(s.latency_max)} ms` +
       `${s.close_reason ? ' · ' + esc(s.close_reason) : ''}</td></tr>`).join('');
-    tr.insertAdjacentHTML('afterend', rows || '<tr class="sub"><td colspan="12" class="empty">No sessions.</td></tr>');
+    tr.insertAdjacentHTML('afterend', rows || '<tr class="sub"><td colspan="13" class="empty">No sessions.</td></tr>');
   };
   $('refresh').onclick = load;
   $('q').onkeydown = (e) => { if (e.key === 'Enter') load(); };
@@ -83,8 +139,8 @@
     await api('/admin/api/clients/clear', {});
     load();
   };
-  load();
-  setInterval(load, 15000);
+  loadBlocks().then(load);
+  setInterval(() => loadBlocks().then(load), 15000);
 })();
 </script>
 {% endblock %}

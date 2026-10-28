@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/). Every change
 ships as its own version: the top section always matches `VERSION`.
 
+## [0.8.0] - 2026-10-28
+
+### Added
+- **Kick and block devices** on the admin Clients page. *Kick* disconnects a
+  phone (it rejoins by itself). *Block* refuses a client id from now on,
+  disconnecting it at once; *Block IP* refuses every phone on an address
+  (with a warning: behind NAT that can be many guests). The Blocked list
+  adds blocks by hand (client id or IP, with a note), shows how often each
+  was refused since the restart, and unblocks. Blocks are stored in the new
+  `blocks` table (migration 0002) and checked in memory on connect only.
+- Wire format: text `x` (blocked: the page goes black, says "This device
+  can't join the show" and stops reconnecting) and `k` (kicked).
+- Admin API: `POST /admin/api/clients/kick`, `GET`/`POST /admin/api/blocks`,
+  `POST /admin/api/blocks/remove`.
+
+Redeploy: `cd ~/PhoneLight && git pull && sudo systemctl restart phonelight`
+(start.sh applies the new migration).
+
 ## [0.7.0] - 2026-10-28
 
 ### Added
