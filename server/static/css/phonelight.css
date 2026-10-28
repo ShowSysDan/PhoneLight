@@ -94,7 +94,9 @@ input[type=color] { padding: 2px; width: 44px; height: 36px; cursor: pointer; }
 .fixtures { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
 .fx { border-radius: var(--radius); border: 1px solid var(--border-hover); overflow: hidden; background: var(--surface); cursor: pointer; }
 .fx:hover { border-color: var(--accent); }
-.fx .sw { height: 74px; background: #000; }
+.fx .sw { height: 74px; background: #000; display: grid; gap: 1px; }
+.fx .sw > div { background: #000; }
+.fx .sw > div:hover { outline: 1px solid var(--accent); outline-offset: -1px; }
 .fx .lbl { display: flex; justify-content: space-between; padding: 5px 8px; font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
 .fx .lbl b { color: var(--text); }
 

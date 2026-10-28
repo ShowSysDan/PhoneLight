@@ -5,6 +5,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/). Every change
 ships as its own version: the top section always matches `VERSION`.
 
+## [0.7.0] - 2026-10-28
+
+### Added
+- **Cells (sub-fixtures).** New settings *Cells per fixture* (1–40, default
+  1) and *Cell columns*. Each fixture becomes cells × RGB (× 3 channels, or
+  × 6 in 16-bit, cell 1 first, no dimmer) and every phone in it splits its
+  screen into a grid of that many cells: *Cell columns* side by side, the
+  rest in rows below, cell 1 top left. Changes apply live.
+- Wire format: a colour frame carries every cell's RGB, then the show-at
+  time (7 bytes with 1 cell, as before; 3 more per extra cell). New text
+  message `l<cells>,<columns>` tells the phone its grid; it always reaches
+  a phone before frames of the new size.
+- Admin Live: fixture swatches show their cells; click a cell to colour just
+  that cell (`cell` in `/admin/api/mode`). Chase steps through every cell,
+  rainbow spreads over them, identify keeps one hue per fixture. sACN
+  monitor labels each channel's cell; Settings shows the cell footprint.
+- The guest page prints the phone's client id (as on the Clients page)
+  small in the bottom-right corner: white on the start screen, black during
+  the show.
+
+### Fixed
+- After a settings change the engine republishes even when its output looks
+  unchanged, so a frame dropped mid-change can't leave phones black.
+
+Redeploy: `cd ~/PhoneLight && git pull && sudo systemctl restart phonelight`.
+
 ## [0.6.0] - 2026-10-28
 
 ### Changed (security)

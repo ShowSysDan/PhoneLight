@@ -87,7 +87,7 @@ def phone(url, i, until, stats):
                 now = time.monotonic()
                 show = now
                 if off is not None and len(msg) >= 7:     # the guest page's rule
-                    at = int.from_bytes(msg[3:7], 'big')
+                    at = int.from_bytes(msg[-4:], 'big')       # after every cell's RGB
                     wait = (at - (round(clock() + off) & 0xFFFFFFFF) + 2**31) % 2**32 - 2**31
                     if 0 < wait <= 2000:
                         show = now + wait / 1000

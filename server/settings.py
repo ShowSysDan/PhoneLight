@@ -18,6 +18,14 @@ DEFS = {
                      help='Guests are split evenly across this many fixtures (groups).'),
     'bit_depth': dict(label='Fixture mode', type=int, choices=(8, 16), default=8,
                       help='8-bit: R G B (3 channels). 16-bit: R R-fine G G-fine B B-fine (6 channels).'),
+    'cells': dict(label='Cells per fixture', type=int, min=1, max=40, default=1,
+                  help='Each phone\'s screen is split into this many cells, each its own RGB (a pixel bar '
+                       'per phone). A fixture is then cells × 3 channels (× 6 in 16-bit). 1 = the whole '
+                       'screen one colour.'),
+    'cell_columns': dict(label='Cell columns', type=int, min=1, max=40, default=1,
+                         help='How the cells sit on the screen: this many side by side, the rest in rows '
+                              'below, cell 1 top left. 1 = stacked top to bottom; the same as the cell '
+                              'count = side by side.'),
     'master': dict(label='Master dimmer %', type=int, min=0, max=100, default=100,
                    help='Scales every colour sent to phones.'),
     'sync_delay': dict(label='Sync delay (ms)', type=int, min=0, max=1000, default=100,
@@ -39,7 +47,8 @@ _listeners = []
 
 
 def channels_per_fixture(values=None):
-    return 6 if (values or current())['bit_depth'] == 16 else 3
+    values = values or current()
+    return (6 if values['bit_depth'] == 16 else 3) * values['cells']
 
 
 def _coerce(key, raw):

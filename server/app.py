@@ -34,7 +34,7 @@ class Runtime:
 
     def __init__(self):
         v = settings.current()
-        self.hub = Hub(v['fixtures'])
+        self.hub = Hub(v['fixtures'], v['cells'], v['cell_columns'])
         self.hub.delay_ms = v['sync_delay']
         self.engine = Engine(self.hub.publish)
         self.receiver = Receiver(lambda: settings.current()['universe'], self.engine.on_frame,
@@ -47,6 +47,8 @@ class Runtime:
         self.hub.delay_ms = new['sync_delay']
         if new['fixtures'] != old['fixtures']:
             self.hub.resize(new['fixtures'])
+        if (new['cells'], new['cell_columns']) != (old['cells'], old['cell_columns']):
+            self.hub.set_layout(new['cells'], new['cell_columns'])
         if new['universe'] != old['universe']:
             self.receiver.universe_changed()
         self.engine.recompute()
@@ -183,7 +185,7 @@ def create_app(start=True):
     # ── admin API ──────────────────────────────────────────────────────────
     @app.post('/admin/api/mode')
     def api_mode():
-        """{mode, color?: '#rrggbb', fixture?: n, pattern?, rate?} -> the Live page's
+        """{mode, color?: '#rrggbb', fixture?: n, cell?: n, pattern?, rate?} -> the Live page's
         output and test tools (all made inside the engine; nothing is sent as sACN)."""
         body = request.get_json(silent=True) or {}
         color = None
@@ -196,13 +198,14 @@ def create_app(start=True):
                 return jsonify(error='colour must be #rrggbb'), 400
         try:
             fixture = int(body['fixture']) if body.get('fixture') is not None else None
+            cell = int(body['cell']) if body.get('cell') is not None else None
             rate = float(body['rate']) if body.get('rate') is not None else None
-            rt.engine.set_mode(body.get('mode', 'sacn'), color, fixture, body.get('pattern'), rate)
+            rt.engine.set_mode(body.get('mode', 'sacn'), color, fixture, body.get('pattern'), rate, cell)
         except (TypeError, ValueError) as exc:
             return jsonify(error=str(exc)), 400
         if not body.get('quiet'):
             log.info('mode -> %s %s', rt.engine.mode,
-                     {k: body[k] for k in ('color', 'fixture', 'pattern', 'rate') if k in body})
+                     {k: body[k] for k in ('color', 'fixture', 'cell', 'pattern', 'rate') if k in body})
         return jsonify(rt.engine.snapshot())
 
     @app.post('/admin/api/rebalance')

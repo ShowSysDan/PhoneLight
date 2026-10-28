@@ -8,7 +8,7 @@
 <title>glow.lighting</title>
 <style>
 html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
-#c{position:fixed;inset:0;background:#000}
+#c{position:fixed;inset:0;background:#000;display:grid}
 #go{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
   padding:24px;color:#fff;font:16px/1.4 system-ui,-apple-system,sans-serif;text-align:center;background:#000}
 /* wordmark: white core, layered RGB halo; the whole halo cycles hue (one compositor-friendly filter, no JS) */
@@ -29,6 +29,7 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none
 #go small{max-width:340px;color:#999;font-size:12px}
 #i{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);padding:10px 14px;border-radius:10px;background:rgba(0,0,0,.78);
   color:#fff;font:12px/1.6 ui-monospace,Menlo,monospace;white-space:pre;text-align:left;pointer-events:none}
+#n{position:fixed;right:6px;bottom:calc(4px + env(safe-area-inset-bottom));color:#fff;opacity:.6;font:10px ui-monospace,Menlo,monospace;pointer-events:none}
 #s{position:fixed;left:0;right:0;bottom:8px;text-align:center;color:#fff;opacity:.35;font:11px system-ui,sans-serif;pointer-events:none}
 </style>
 </head><body>
@@ -41,6 +42,7 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none
 screen size, language, time zone) and how long you are connected. Nothing personal is asked for or stored.</small>
 </div>
 <div id="s"></div>
+<div id="n"></div>
 <div id="i" hidden></div>
 <script>
 (function(){
@@ -51,13 +53,21 @@ function put(k,v){try{ls.setItem&&ls.setItem(k,v)}catch(e){}}
 var m=document.cookie.match(/(?:^|; )pl_id=([\w-]+)/);
 var id=get('pl_id')||(m&&m[1]);
 if(!id){id='';var a='abcdefghijklmnopqrstuvwxyz0123456789';for(var i=0;i<24;i++)id+=a[Math.random()*36|0]}
-put('pl_id',id);document.cookie='pl_id='+id+';max-age=31536000;path=/;samesite=lax';
+put('pl_id',id);var nid=document.getElementById('n');nid.textContent=id;document.cookie='pl_id='+id+';max-age=31536000;path=/;samesite=lax';
 var ws,tries=0,blackT,lockS,last=0,syncT,nsync=0;
 // Sync: frames carry "show at server ms" (uint32). off = server clock - our clock, from
 // NTP-style samples; keep the lowest-round-trip of the last 8. q = frames waiting for their time.
-var off=null,samples=[],q=[],shown='',now=function(){return performance.now()};
-function paint(col){if(col!==shown){shown=col;c.style.background=col}}
-function black(){q=[];paint('#000')}
+var off=null,samples=[],q=[],now=function(){return performance.now()};
+// Cells: the screen is a grid of ncell cells, per side by side (the 'l' message), cell 1 top left.
+var cells=[],shown=[],ncell=0,per=0,want=0;
+function layout(n,k){
+  if(n==ncell&&k==want)return;ncell=n;want=k;per=Math.max(1,Math.min(k,n));c.innerHTML='';cells=[];shown=[];
+  c.style.gridTemplateColumns='repeat('+per+',1fr)';c.style.gridTemplateRows='repeat('+Math.ceil(n/per)+',1fr)';
+  for(var i=0;i<n;i++){var e=document.createElement('div');e.style.background='#000';c.appendChild(e);cells.push(e);shown.push('#000')}
+}
+layout(1,1);
+function paint(cs){for(var i=0;i<cs.length&&i<ncell;i++)if(cs[i]!==shown[i]){shown[i]=cs[i];cells[i].style.background=cs[i]}}
+function black(){q=[];var cs=[];for(var i=0;i<ncell;i++)cs.push('#000');paint(cs)}
 function sync(){if(ws&&ws.readyState==1)ws.send('s'+now().toFixed(1));syncT=setTimeout(sync,++nsync<6?150:4000)}
 function synced(d){
   var p=d.slice(1).split(','),c0=+p[0],t1=+p[1],t2=+p[2],c3=now();
@@ -67,9 +77,11 @@ function synced(d){
 var nframes=0,fx='';
 function frame(b){
   nframes++;
-  var col='rgb('+b[0]+','+b[1]+','+b[2]+')';
-  if(off===null||b.length<7){q=[];return paint(col)}
-  var at=((b[3]<<24|b[4]<<16|b[5]<<8|b[6])>>>0),wait=(at-(Math.round(now()+off)>>>0))|0;
+  var n=(b.length-4)/3|0,col=[],j=n*3;if(n<1)return;
+  if(n!=ncell)layout(n,want||1);
+  for(var i=0;i<j;i+=3)col.push('rgb('+b[i]+','+b[i+1]+','+b[i+2]+')');
+  if(off===null){q=[];return paint(col)}
+  var at=((b[j]<<24|b[j+1]<<16|b[j+2]<<8|b[j+3])>>>0),wait=(at-(Math.round(now()+off)>>>0))|0;
   if(wait<=0||wait>2000){q=[];return paint(col)}   // late (or nonsense): show now, it is the newest
   q.push([now()+wait,col]);if(q.length>64)q.shift();
 }
@@ -90,6 +102,7 @@ function connect(){
     var d=e.data;last=Date.now();
     if(typeof d!='string')return frame(new Uint8Array(d));
     if(d[0]=='p')ws.send(d);else if(d[0]=='s')synced(d);else if(d[0]=='f'){fx=d.slice(1);put('pl_fx',fx)}
+    else if(d[0]=='l'){var p=d.slice(1).split(',');if(+p[0]>0)layout(+p[0],+p[1]||1)}
   };
   ws.onclose=function(){
     ws=null;clearTimeout(syncT);clearTimeout(blackT);blackT=setTimeout(black,3000);st.textContent='reconnecting…';
@@ -116,7 +129,7 @@ function status(){
   var up=ws&&ws.readyState==1,fps=nframes-fr0;fr0=nframes;
   info.textContent='glow.lighting\nfixture '+(fx||'?')+' \u00b7 '+(up?'connected':'reconnecting')+
     '\nround trip '+(b?Math.round(b[0])+' ms':'\u2013')+' \u00b7 sync '+(off===null?'not yet':'\u00b1'+Math.max(1,Math.round(b[0]/2))+' ms')+
-    '\n'+fps*2+' frames/s \u00b7 '+(shown||'#000')+'\nid '+id.slice(0,8);
+    '\n'+fps*2+' frames/s \u00b7 '+shown[0]+(ncell>1?' (cell 1 of '+ncell+')':'')+'\nid '+id.slice(0,8);
 }
 function showInfo(){
   clearInterval(infoT);clearTimeout(hideT);fr0=nframes;status();info.hidden=false;infoT=setInterval(status,500);
@@ -128,7 +141,7 @@ c.addEventListener('contextmenu',function(e){e.preventDefault()});
 document.getElementById('b').onclick=function(){
   var d=document.documentElement,r=d.requestFullscreen||d.webkitRequestFullscreen;
   if(r)try{var p=r.call(d);p&&p.catch&&p.catch(function(){})}catch(e){}
-  go.style.display='none';lock();connect();requestAnimationFrame(tick);
+  go.style.display='none';nid.style.color='#000';lock();connect();requestAnimationFrame(tick);
 };
 document.addEventListener('visibilitychange',function(){
   if(document.visibilityState=='visible')lock();

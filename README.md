@@ -1,6 +1,6 @@
 # glow.lighting
 
-Version **0.6.0** · see [CHANGELOG.md](CHANGELOG.md)
+Version **0.7.0** · see [CHANGELOG.md](CHANGELOG.md)
 
 > **glow.lighting** is the product name: it is what guests and the admin
 > see. The code name **PhoneLight** stays for the repo, the folder
@@ -11,7 +11,9 @@ Crowd lighting for festivals: the audience opens a web page on their phones,
 taps once, and their whole screen becomes a light that the lighting console
 drives over **sACN** (E1.31). The server splits the crowd evenly into
 **fixtures** (groups), so a console can chase, split and colour sections of
-the crowd like any other RGB fixtures.
+the crowd like any other RGB fixtures. A fixture can also have **cells**:
+each of its phones' screens is split into that many areas, each its own
+RGB, like a pixel bar.
 
 > **Trial build.** SQLite for now. If PhoneLight goes ahead it moves to
 > PostgreSQL like our other apps (see [Moving to PostgreSQL](#moving-to-postgresql)).
@@ -43,7 +45,7 @@ the crowd like any other RGB fixtures.
  │ sacn.Receiver   one universe, HTP merge of the highest-priority sources  │
  │      │  every accepted packet, straight through (no queue)               │
  │      ▼                                                                   │
- │ engine.Engine   levels → one RGB per fixture (8- or 16-bit), master,     │
+ │ engine.Engine   levels → one RGB per fixture cell (8- or 16-bit), master,│
  │      │          signal-loss hold + fade, admin overrides                 │
  │      ▼          publishes only when a colour actually changes            │
  │ hub.Hub         guests split evenly across fixtures; each changed        │
@@ -57,12 +59,15 @@ the crowd like any other RGB fixtures.
              phone            phone            phone    … (full-screen colour)
 ```
 
-- **Guest page** (`/`): one ~9 KB HTML file, no frameworks, no external
+- **Guest page** (`/`): one ~10 KB HTML file, no frameworks, no external
   files. A **glow.lighting** start screen whose wordmark and button glow
   with a halo that cycles through the colour wheel (pure CSS, one animated
   filter; still for guests whose phone asks for reduced motion). Tap to start → full screen, screen kept awake, WebSocket opened.
-  Each colour arrives as 7 bytes (R, G, B + when to show it) and is painted
-  at that moment (see [Keeping phones in sync](#keeping-phones-in-sync)).
+  Each colour arrives as 7 bytes (R, G, B + when to show it; 3 more bytes
+  per extra cell) and is painted at that moment (see
+  [Keeping phones in sync](#keeping-phones-in-sync)). The phone's client id
+  (the one on the admin Clients page) is printed small in the bottom-right
+  corner: white on the start screen, black once the show is running.
   If the connection drops the phone goes black after 3 s and reconnects
   (with a random delay, so a server restart is not hit by every phone at once).
 - **Latest frame wins.** Nothing is ever queued for a phone. If a phone (or
@@ -74,6 +79,12 @@ the crowd like any other RGB fixtures.
   goes back to its old group when that group is one of the emptiest.
   Changing the fixture count (or pressing *Rebalance groups*) deals everyone
   out again evenly.
+- **Cells:** with *Cells per fixture = 6*, a fixture is 6 RGB cells (18
+  channels in 8-bit, 36 in 16-bit, cell 1 first) and every phone in it
+  splits its screen into 6. *Cell columns* sets the grid: 1 = six stripes
+  stacked top to bottom, 2 = 2 × 3, 6 = six side by side; cell 1 is top left,
+  then left to right, row by row. Every fixture has the same number of cells
+  (up to 40). Changes apply live: phones redraw their grid at once.
 - **sACN merge:** HTP. Among the sources heard in the last 2.5 s, only those
   at the highest priority count, merged highest-value-wins per channel.
 - **Signal loss:** sACN is *lost* after 2.5 s without a packet (or at once
@@ -184,7 +195,9 @@ cd ~/PhoneLight && ./install.sh && ./start.sh
 ## Console setup
 
 1. Patch *Fixtures* × generic **RGB** fixtures (8-bit: 3 channels; 16-bit:
-   6 channels) from the *Start address* in one universe.
+   6 channels) from the *Start address* in one universe. With cells, patch
+   each as a multi-cell RGB fixture (pixel bar) of *Cells per fixture*
+   cells: cells × 3 channels (× 6 in 16-bit), cell 1 first, no dimmer channel.
 2. Set that universe to output **sACN unicast** to the PhoneLight server's IP
    (no multicast needed; PhoneLight does not join multicast groups).
 3. On the admin **Settings** page set the same universe, start address,
@@ -200,10 +213,10 @@ same priority to merge them HTP.
 
 | Page | What it shows / does |
 |---|---|
-| **Live** | Phones connected, average round-trip latency, output frames/s, sACN rate; a live swatch per fixture with its phone count. Output buttons: **Live sACN**, **Identify** (every fixture a different colour, to check groups), **Blackout**, **Rebalance groups**. A **warning** appears when phones sit in a fixture group whose channels have stayed at 0 since sACN started: almost always a patch problem (the group isn't in the cue). **Test tools:** manual colour (all fixtures, or click one fixture) and patterns (chase / flash / rainbow); see [Testing without a console](#testing-without-a-console). Overrides and tests are not saved: a restart goes back to Live sACN. |
+| **Live** | Phones connected, average round-trip latency, output frames/s, sACN rate; a live swatch per fixture with its phone count (with cells, laid out like the phones' screens). Output buttons: **Live sACN**, **Identify** (every fixture a different colour, to check groups), **Blackout**, **Rebalance groups**. A **warning** appears when phones sit in a fixture group whose channels have stayed at 0 since sACN started: almost always a patch problem (the group isn't in the cue). **Test tools:** manual colour (all fixtures, click one fixture, or click one cell) and patterns (chase / flash / rainbow); see [Testing without a console](#testing-without-a-console). Overrides and tests are not saved: a restart goes back to Live sACN. |
 | **sACN monitor** | Listening address, packet counts, every source (name, IP, priority, fps, out-of-order packets, CID), the 512 levels (fixture channels outlined R/G/B; hover a cell for fixture and colour). **Timing** (see [Finding a delay](#finding-a-delay)): how long packets waited before the app read them, how long the app took to hand the colours to the phones, and stale packets skipped. |
 | **Clients** | Phones connected now (fixture, IP, device, OS, browser, connected time, last and average latency). Client log: every browser seen, visits, total time, average latency, device details; click one for its sessions. *Clear log* deletes the history. |
-| **Settings** | Universe, start address, fixtures, 8/16-bit, master dimmer, sync delay, signal-loss hold and fade, how long client data is kept. Applied live, no restart. |
+| **Settings** | Universe, start address, fixtures, 8/16-bit, cells per fixture and their columns, master dimmer, sync delay, signal-loss hold and fade, how long client data is kept. Applied live, no restart. |
 
 The header always shows the sACN state, how many phones are connected and,
 in amber, any active override.
@@ -223,7 +236,11 @@ They are generated inside the server and go only to the phones:
 
 - **Manual colour:** pick a colour, then *All fixtures*, or click a fixture's
   swatch to give just that fixture the colour (the others keep their look).
+  With cells, clicking a cell colours just that cell (handy for checking the
+  cell order); click the fixture's number bar for the whole fixture.
 - **Pattern:** chase, flash or rainbow, with a colour and a rate per second.
+  With cells the chase steps through every cell (fixture 1 cell 1 first) and
+  the rainbow spreads over every cell.
   A flash is the easiest way to see whether phones are changing in sync.
 
 The header shows **TEST** in amber while either is active; *Live sACN* hands
@@ -260,7 +277,7 @@ PhoneLight uses a lightweight NTP-style sync, not PTP:
    tracks clock drift.
 2. **Every frame says when to show it:** "server time T", where T = the
    moment the console's change was processed + **Sync delay** (Settings,
-   default 100 ms). It is the same 7 bytes for every phone, so the server
+   default 100 ms). It is the same 7 bytes (more with cells) for every phone, so the server
    still builds each frame once.
 3. **Each phone paints at T on its own clock**, on its next screen refresh.
    A phone that got the frame after T (its latency is above the delay)
@@ -305,6 +322,11 @@ settings), a node or converter in between, or the network path (Wi-Fi
 bridges, tunnels).
 
 ## Performance
+
+**Cells (0.7.0):** 1000 phones with 6 cells each (22-byte frames) ran the
+same as 1 cell: 40 frames/s on every phone, ~105 MB, change → arrival
+median 12 ms, spread median 6 ms, all within run-to-run noise of the code
+without cells on the same VM (13.6 ms / 5.6 ms).
 
 Measured on a 4-core cloud VM, server and simulated phones on the same
 machine, 40 colour changes a second (the worst case), Sync delay 100 ms.

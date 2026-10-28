@@ -5,7 +5,7 @@ frame rate, and a slow phone skips stale frames instead of falling behind.
 
 Fast path (every phone keeping up): `publish()` builds each changed
 fixture's WebSocket frame ONCE (`frame()`: a complete, unmasked binary
-frame, 9 bytes) and writes it straight into each of that fixture's sockets
+frame, 9 bytes with one cell) and writes it straight into each of that fixture's sockets
 with one non-blocking send. No wake-ups, no task switches, no trip through
 the WebSocket library: 1000 phones cost 1000 small syscalls per frame.
 
@@ -28,10 +28,17 @@ paints the frame at T on its own clock. A phone whose latency is above the
 delay shows the frame on arrival. delay_ms 0 = no waiting, show on arrival.
 Server time is `server_ms()`: monotonic milliseconds (never jumps).
 
+Cells: a fixture can have several cells (Settings), each its own RGB; each
+of its phones splits its screen into them. The frame then carries every
+cell's RGB, still one frame per fixture.
+
 Wire format (kept tiny on purpose):
-  server -> guest   7 bytes binary  R, G, B + show-at server ms (uint32 BE, mod 2^32)
+  server -> guest   binary          R, G, B for each cell (cell 1 first; 1 cell = 3 bytes)
+                                    + show-at server ms (uint32 BE, mod 2^32): 7 bytes with 1 cell
                     text 'p<n>'     ping; the guest echoes it back
                     text 'f<n>'     your fixture is n (kept for reconnects)
+                    text 'l<cells>,<columns>'  screen layout: that many cells, that many side
+                                    by side, the rest in rows below (sent before colours)
                     text 's<c0>,<t1>,<t2>'  clock sync reply: the guest's send time
                                     c0, our receive time t1 and send time t2 (ms)
   guest -> server   text JSON       hello (first message): id + device info
@@ -55,9 +62,10 @@ def server_ms():
 
 
 def frame(rgb, show_at=0):
-    """Colour + show-at server ms -> a whole WebSocket frame (FIN + binary,
-    length 7). A show-at in the past (or 0) means "now"."""
-    return b'\x82\x07' + rgb + (int(show_at) & 0xFFFFFFFF).to_bytes(4, 'big')
+    """Colours (3 bytes per cell, at most 40 cells) + show-at server ms -> a
+    whole WebSocket frame (FIN + binary, one-byte length). A show-at in the
+    past (or 0) means "now"."""
+    return b'\x82' + bytes((len(rgb) + 4,)) + rgb + (int(show_at) & 0xFFFFFFFF).to_bytes(4, 'big')
 
 
 BLACK = frame(b'\x00\x00\x00')
@@ -65,13 +73,13 @@ _SYNC = re.compile(r'^s\d{1,12}(\.\d{1,4})?$')
 
 
 class Guest:
-    __slots__ = ('sid', 'client_id', 'ip', 'info', 'fixture', 'told', 'connected_at', 'raw', 'wake',
+    __slots__ = ('sid', 'client_id', 'ip', 'info', 'fixture', 'told', 'told_layout', 'connected_at', 'raw', 'wake',
                  'closer', 'dirty', 'busy', 'busy_since', 'pending', 'ping_seq', 'ping_at', 'last_pong',
                  'lat_n', 'lat_sum', 'lat_min', 'lat_max', 'lat_last', 'alive', 'why', 'sync')
 
     def __init__(self, sid, client_id, ip, info, raw=None, closer=None):
         self.sid, self.client_id, self.ip, self.info = sid, client_id, ip, info
-        self.fixture, self.told = 0, None
+        self.fixture, self.told, self.told_layout = 0, None, None
         self.connected_at = time.time()
         self.raw = raw                    # non-blocking OS socket for the fast path, or None
         self.closer = closer              # fn() that closes the socket (unblocks a stuck write)
@@ -129,11 +137,13 @@ def _write_now(g, fr):
 
 
 class Hub:
-    def __init__(self, fixtures):
+    def __init__(self, fixtures, cells=1, columns=1):
         self.lock = threading.Lock()
         self.guests = {}                          # sid -> Guest
         self.members = [set() for _ in range(fixtures)]
-        self.frames = [BLACK] * fixtures         # pre-built colour frame per fixture
+        self.layout = (cells, columns)
+        self.black = frame(bytes(3 * cells))
+        self.frames = [self.black] * fixtures    # pre-built colour frame per fixture
         self.total_connects = 0
         self.delay_ms = 0                         # Sync delay (settings), see module doc
 
@@ -165,8 +175,22 @@ class Hub:
         """New fixture count: deal everyone out again, evenly."""
         with self.lock:
             self.members = [set() for _ in range(fixtures)]
-            self.frames = (self.frames + [BLACK] * fixtures)[:fixtures]
+            self.frames = (self.frames + [self.black] * fixtures)[:fixtures]
         self.rebalance()
+
+    def set_layout(self, cells, columns):
+        """New cell count / columns: every phone is told, then gets its colours
+        again (black until the engine publishes the new size)."""
+        with self.lock:
+            if cells != self.layout[0]:
+                self.black = frame(bytes(3 * cells))
+                self.frames = [self.black] * len(self.frames)
+            self.layout = (cells, columns)
+            guests = list(self.guests.values())
+            for g in guests:
+                g.dirty = True
+        for g in guests:
+            g.wake.set()
 
     def rebalance(self):
         with self.lock:
@@ -186,15 +210,20 @@ class Hub:
         """Engine output -> every guest whose fixture changed (see module doc)."""
         slow, show_at = [], None
         with self.lock:
-            if len(colors) != len(self.members):
-                return                        # mid-resize; the next frame fits
+            if len(colors) != len(self.members) or len(colors[0]) != 3 * self.layout[0]:
+                return                        # mid-resize; the engine republishes after it
+            layout = self.layout
             for i, rgb in enumerate(colors):
-                if rgb != self.frames[i][2:5]:
+                if rgb != self.frames[i][2:-4]:
                     if show_at is None:
                         show_at = server_ms() + self.delay_ms
                     fr = self.frames[i] = frame(rgb, show_at)
                     for g in self.members[i]:
-                        if not _write_now(g, fr):
+                        # a phone not yet told this layout gets it from its sender first, then the colour
+                        if g.told_layout is not layout:
+                            g.dirty = True
+                            slow.append(g)
+                        elif not _write_now(g, fr):
                             slow.append(g)
         for g in slow:
             g.wake.set()
@@ -233,10 +262,13 @@ class Hub:
         if guest.told != guest.fixture:
             guest.told = guest.fixture
             return f'f{guest.fixture + 1}'
+        if guest.told_layout != self.layout:
+            guest.told_layout = layout = self.layout
+            return f'l{layout[0]},{layout[1]}'
         if guest.dirty:
             guest.dirty = False
             frames = self.frames
-            return frames[guest.fixture] if guest.fixture < len(frames) else BLACK
+            return frames[guest.fixture] if guest.fixture < len(frames) else self.black
         if guest.ping_at is None and now - guest.last_pong >= PING_INTERVAL:
             guest.ping_seq = (guest.ping_seq + 1) % 1000000
             guest.ping_at = now

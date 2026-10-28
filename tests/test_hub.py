@@ -40,7 +40,7 @@ def test_publish_slow_path_is_latest_wins():
     h = Hub(1)
     g = guest(1)
     h.join(g)
-    g.told = g.fixture
+    assert h.next_message(g) == 'f1' and h.next_message(g) == 'l1,1'   # fixture, then layout, then colour
     assert h.next_message(g) == BLACK            # the join flags it once
     h.publish([RED])
     h.publish([BLUE])
@@ -55,7 +55,7 @@ def test_publish_fast_path_writes_directly():
         h = Hub(1)
         g = guest(1, raw=a)
         h.join(g)
-        g.dirty = False
+        g.dirty, g.told_layout = False, h.layout
         h.publish([RED])
         assert b.recv(16) == h.frames[0] and h.frames[0][:5] == b'\x82\x07' + RED and not g.dirty
     finally:
@@ -70,7 +70,7 @@ def test_fast_path_skips_busy_sender_and_full_socket():
         h = Hub(1)
         g = guest(1, raw=a)
         h.join(g)
-        g.busy = True
+        g.busy, g.told_layout = True, h.layout
         h.publish([RED])
         assert g.dirty                               # left to the sender
         b.setblocking(False)
@@ -106,7 +106,7 @@ def test_partial_write_finishes_frame_first():
     raw = Raw()
     g = guest(1, raw=raw)
     h.join(g)
-    g.dirty = False
+    g.dirty, g.told_layout = False, h.layout
     g.told = g.fixture
     h.publish([RED])
     fr = h.frames[0]
@@ -126,7 +126,7 @@ def test_ping_pong_latency():
     h = Hub(1)
     g = guest(1)
     h.join(g)
-    g.told, g.dirty = g.fixture, False
+    g.told, g.told_layout, g.dirty = g.fixture, h.layout, False
     g.last_pong = 0
     msg = h.next_message(g, now=100.0)
     assert msg == 'p1' and h.next_message(g, now=100.0) is None   # one ping outstanding
@@ -169,3 +169,57 @@ def test_sync_request_and_reply():
     c0, t1, t2 = reply[1:].split(',')
     assert c0 == '1234.5' and float(t1) <= float(t2) <= hubmod.server_ms() + 0.1
     assert g.sync is None
+
+
+def test_cells_frame_carries_every_cell_then_show_at():
+    h = Hub(1, cells=2, columns=2)
+    g = guest(1)
+    h.join(g)
+    assert h.next_message(g) == 'f1' and h.next_message(g) == 'l2,2'
+    assert h.next_message(g) == frame(bytes(6))                 # black, at the cell count
+    h.publish([RED + BLUE])
+    fr = h.frames[0]
+    assert fr[:2] == b'\x82\x0a' and fr[2:8] == RED + BLUE and len(fr) == 12
+    assert h.next_message(g) == fr
+    h.publish([RED])                                            # wrong width (mid-change): dropped
+    assert h.frames[0] == fr
+
+
+def test_set_layout_tells_every_phone_and_resets_frames():
+    h = Hub(2)
+    gs = [guest(i) for i in range(2)]
+    for g in gs:
+        h.join(g)
+        h.next_message(g), h.next_message(g), h.next_message(g)   # fixture, layout, colour
+    h.publish([RED, BLUE])
+    h.set_layout(3, 1)
+    assert h.frames == [frame(bytes(9))] * 2
+    for g in gs:
+        assert h.next_message(g) == 'l3,1' and h.next_message(g) == frame(bytes(9))
+    h.publish([RED * 3, BLUE * 3])
+    assert h.frames[1][2:-4] == BLUE * 3
+    h.set_layout(3, 3)                                          # columns only: colours kept
+    assert h.frames[1][2:-4] == BLUE * 3 and h.next_message(gs[0]) == 'l3,3'
+
+
+def test_fast_path_waits_until_the_phone_knows_the_layout():
+    """A new cell count must reach the phone before frames of that size."""
+    a, b = socket.socketpair()
+    a.setblocking(False)
+    b.setblocking(False)
+    try:
+        h = Hub(1)
+        g = guest(1, raw=a)
+        h.join(g)
+        g.told, g.told_layout, g.dirty = g.fixture, h.layout, False
+        h.set_layout(2, 1)
+        h.publish([RED + BLUE])
+        try:
+            b.recv(16)
+            raise AssertionError('frame written before the layout message')
+        except BlockingIOError:
+            pass
+        assert g.dirty and h.next_message(g) == 'l2,1' and h.next_message(g)[2:-4] == RED + BLUE
+    finally:
+        a.close()
+        b.close()

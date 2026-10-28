@@ -29,7 +29,7 @@
     <b style="min-width:120px">Manual colour</b>
     <input type="color" id="manual" value="#ffffff" title="Colour">
     <button data-mode="color" id="all">All fixtures</button>
-    <span class="dim small">or click a fixture below to give it this colour</span>
+    <span class="dim small">or click a fixture below to give it this colour (with cells: click a cell for just that cell, the number bar for the whole fixture)</span>
   </div>
   <div class="row" style="margin-top:12px">
     <b style="min-width:120px">Pattern</b>
@@ -53,19 +53,35 @@
 (() => {
   const { $, esc, num, setText, setHTML, api } = PL;
   const tiles = [];
-  function build(n) {
+  let built = '';
+  function build(n, cells, columns) {
+    // each tile's swatch is laid out like the phones' screens: `per` cells side by side
+    const per = Math.max(1, Math.min(columns, cells)), rows = Math.ceil(cells / per);
+    const grid = `grid-template-columns:repeat(${per},1fr);grid-template-rows:repeat(${rows},1fr)`;
     let html = '';
-    for (let i = 0; i < n; i++) html += `<div class="fx"><div class="sw"></div><div class="lbl"><b>${i + 1}</b><span></span><span></span></div></div>`;
+    for (let i = 0; i < n; i++) {
+      let sw = '';
+      for (let k = 0; k < cells; k++) sw += `<div data-c="${k + 1}" title="fixture ${i + 1}${cells > 1 ? ` cell ${k + 1}` : ''}"></div>`;
+      html += `<div class="fx" data-f="${i + 1}"><div class="sw" style="${grid}">${sw}</div><div class="lbl"><b>${i + 1}</b><span></span><span></span></div></div>`;
+    }
     setHTML($('fixtures'), html);
     tiles.length = 0;
-    for (const el of $('fixtures').children) tiles.push({ sw: el.firstChild, hex: el.lastChild.children[1], n: el.lastChild.children[2], c: '' });
+    for (const el of $('fixtures').children) {
+      tiles.push({ cells: [...el.firstChild.children].map((c) => ({ el: c, c: '' })),
+                   hex: el.lastChild.children[1], n: el.lastChild.children[2] });
+    }
   }
   PL.feed([], (d) => {
-    const fx = d.engine.fixtures, counts = d.counts;
-    if (tiles.length !== fx.length) build(fx.length);
-    fx.forEach((c, i) => {
+    const fx = d.engine.fixtures, counts = d.counts, s = d.settings;
+    const key = `${fx.length}/${s.cells}/${s.cell_columns}`;
+    if (built !== key) { built = key; build(fx.length, s.cells, s.cell_columns); }
+    fx.forEach((cs, i) => {
       const t = tiles[i];
-      if (t.c !== c) { t.c = c; t.sw.style.background = c; t.hex.textContent = c; }
+      cs.forEach((c, k) => {
+        const cell = t.cells[k];
+        if (cell && cell.c !== c) { cell.c = c; cell.el.style.background = c; }
+      });
+      setText(t.hex, cs.length === 1 ? cs[0] : `${cs.length} cells`);
       setText(t.n, `${counts[i] ?? 0} 📱`);
     });
     setText($('s-guests'), String(d.connected));
@@ -75,11 +91,11 @@
     const t = d.sacn.timing || {};
     setText($('s-sacn-sub'), `universe ${d.settings.universe}, ${d.sacn.sources.length} source(s)` +
       (t.proc_avg == null ? '' : ` · app ${num((t.wait_avg || 0) + t.proc_avg, 1)} ms`));
-    const s = d.settings;
-    setText($('fx-sub'), `${s.fixtures} × ${s.bit_depth}-bit RGB from address ${s.start_address} · master ${s.master}%`);
+    setText($('fx-sub'), `${s.fixtures} × ${s.bit_depth}-bit RGB` + (s.cells > 1 ? ` × ${s.cells} cells` : '') +
+      ` from address ${s.start_address} · master ${s.master}%`);
     document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === d.engine.mode));
     // phones in a group whose channels have stayed at 0 since sACN came: almost always a patch problem
-    const per = s.bit_depth === 16 ? 6 : 3;
+    const per = (s.bit_depth === 16 ? 6 : 3) * s.cells;
     const unlit = (d.engine.unlit || []).filter((f) => counts[f - 1] > 0);
     $('unlit').hidden = !unlit.length || d.engine.mode !== 'sacn';
     setHTML($('unlit'), unlit.length ? '<b>Phones with nothing to show.</b> ' + unlit.map((f) => {
@@ -101,17 +117,18 @@
     const mode = b.dataset.mode;
     send(mode === 'color' ? { mode, color: $('manual').value } : mode === 'pattern' ? pattern() : { mode });
   });
-  let lastFixture = null;               // the picker follows the last fixture clicked, or all
-  $('manual').oninput = () => {
-    if (isOn('color')) send({ mode: 'color', color: $('manual').value, fixture: lastFixture ?? undefined });
-  };
+  let lastFixture = null, lastCell = null;   // the picker follows the last fixture / cell clicked, or all
+  const manual = () => ({ mode: 'color', color: $('manual').value, fixture: lastFixture ?? undefined, cell: lastCell ?? undefined });
+  $('manual').oninput = () => { if (isOn('color')) send(manual()); };
   $('fixtures').onclick = (e) => {
     const el = e.target.closest('.fx');
     if (!el) return;
-    lastFixture = [...$('fixtures').children].indexOf(el) + 1;
-    send({ mode: 'color', fixture: lastFixture, color: $('manual').value });
+    const cell = e.target.closest('.sw > div');
+    lastFixture = +el.dataset.f;
+    lastCell = cell && el.firstChild.children.length > 1 ? +cell.dataset.c : null;
+    send(manual());
   };
-  $('all').addEventListener('click', () => { lastFixture = null; });
+  $('all').addEventListener('click', () => { lastFixture = lastCell = null; });
   ['pattern', 'pcolor', 'rate'].forEach((id) => $(id).onchange = () => { if (isOn('pattern')) send(pattern()); });
   $('rebalance').onclick = () => api('/admin/api/rebalance', {}).then((r) => msg(`Rebalanced: ${r.counts.join(' / ')}`, true), (e) => msg(e.message));
 })();
