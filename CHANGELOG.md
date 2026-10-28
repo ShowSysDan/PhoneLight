@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/). Every change
 ships as its own version: the top section always matches `VERSION`.
 
+## [0.3.1] - 2026-10-28
+
+### Changed
+- The product name is written all lowercase: **glow.lighting** (guest
+  start screen, admin header, page titles, docs).
+
+Redeploy the server: `cd ~/PhoneLight && git pull && sudo systemctl restart phonelight`.
+
 ## [0.3.0] - 2026-10-28
 
 ### Added

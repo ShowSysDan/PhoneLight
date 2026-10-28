@@ -1,6 +1,6 @@
-# PhoneLight (Glow.lighting): notes for Claude
+# PhoneLight (glow.lighting): notes for Claude
 
-Product name **Glow.lighting** in everything guests and admins see; code name
+Product name **glow.lighting** in everything guests and admins see; code name
 PhoneLight for the repo, folder, service and code (don't rename those).
 
 Crowd lighting: phones open a page and become full-screen RGB lights driven

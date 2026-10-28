@@ -1,8 +1,8 @@
-# Glow.lighting
+# glow.lighting
 
-Version **0.3.0** · see [CHANGELOG.md](CHANGELOG.md)
+Version **0.3.1** · see [CHANGELOG.md](CHANGELOG.md)
 
-> **Glow.lighting** is the product name: it is what guests and the admin
+> **glow.lighting** is the product name: it is what guests and the admin
 > see. The code name **PhoneLight** stays for the repo, the folder
 > (`~/PhoneLight`), the `phonelight` service and the code, so installs and
 > update commands don't change.
@@ -56,7 +56,7 @@ the crowd like any other RGB fixtures.
 ```
 
 - **Guest page** (`/`): one ~7 KB HTML file, no frameworks, no external
-  files. A **Glow.lighting** start screen whose wordmark and button glow
+  files. A **glow.lighting** start screen whose wordmark and button glow
   with a halo that cycles through the colour wheel (pure CSS, one animated
   filter; still for guests whose phone asks for reduced motion). Tap to start → full screen, screen kept awake, WebSocket opened.
   Each colour arrives as 7 bytes (R, G, B + when to show it) and is painted

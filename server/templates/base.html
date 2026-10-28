@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Glow.lighting admin{% endblock %}</title>
+  <title>{% block title %}glow.lighting admin{% endblock %}</title>
   <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/phonelight.css') }}?v={{ version }}">
 </head>
 <body data-page="{{ page }}">
   <header class="header">
     <div class="header-left">
-      <a href="{{ url_for('admin_live') }}"><span class="logo">Glow<span>.lighting</span></span></a>
+      <a href="{{ url_for('admin_live') }}"><span class="logo">glow<span>.lighting</span></span></a>
       <span class="version">v{{ version }}</span>
       <span id="pill-sacn" class="pill"><i></i><span>sACN …</span></span>
       <span id="pill-guests" class="pill info"><i></i><span>– phones</span></span>
