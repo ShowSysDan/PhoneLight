@@ -52,6 +52,28 @@ def is_blocked(client_id, ip):
     return None
 
 
+def resolve_client(value, live_ids=()):
+    """A client id as typed by the admin -> the full id. The phone and the
+    Clients page show the first 8 characters, so a unique prefix of a
+    connected or logged client is accepted."""
+    value = str(value or '').strip()
+    if value in live_ids:
+        return value
+    if len(value) < 4:
+        raise ValueError('type at least 4 characters of the client id')
+    found = {i for i in live_ids if i.startswith(value)}
+    esc = value.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+    found.update(r['id'] for r in db.query("SELECT id FROM clients WHERE id LIKE ? ESCAPE '\\' LIMIT 3",
+                                           (esc + '%',)))
+    if value in found:
+        return value
+    if len(found) > 1:
+        raise ValueError(f'more than one client starts with {value}: type more of it')
+    if not found:
+        raise ValueError(f'no connected or logged client starts with {value}')
+    return found.pop()
+
+
 def add(kind, value, note=''):
     value = _norm(kind, value)
     if sum(len(s) for s in _sets.values()) >= MAX_BLOCKS and value not in _sets[kind]:

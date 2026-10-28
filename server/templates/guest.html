@@ -53,7 +53,7 @@ function put(k,v){try{ls.setItem&&ls.setItem(k,v)}catch(e){}}
 var m=document.cookie.match(/(?:^|; )pl_id=([\w-]+)/);
 var id=get('pl_id')||(m&&m[1]);
 if(!id){id='';var a='abcdefghijklmnopqrstuvwxyz0123456789';for(var i=0;i<24;i++)id+=a[Math.random()*36|0]}
-put('pl_id',id);var nid=document.getElementById('n');nid.textContent=id;document.cookie='pl_id='+id+';max-age=31536000;path=/;samesite=lax';
+put('pl_id',id);var nid=document.getElementById('n');nid.textContent=id.slice(0,8);document.cookie='pl_id='+id+';max-age=31536000;path=/;samesite=lax';
 var ws,tries=0,blackT,lockS,last=0,syncT,nsync=0,gone;
 // Sync: frames carry "show at server ms" (uint32). off = server clock - our clock, from
 // NTP-style samples; keep the lowest-round-trip of the last 8. q = frames waiting for their time.

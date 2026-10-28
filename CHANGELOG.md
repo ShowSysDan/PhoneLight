@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/). Every change
 ships as its own version: the top section always matches `VERSION`.
 
+## [0.8.4] - 2026-10-28
+
+### Changed
+- The client id on the phone (bottom right) is now the same 8 characters
+  the admin Clients page shows, instead of the full 24.
+- The Blocked form accepts that short id (or any unique start of an id, 4+
+  characters) and blocks the full id of the matching connected or logged
+  phone. It refuses an id that matches no phone (before, it would quietly
+  block an id nobody has) or more than one (type more of it).
+
+Redeploy: `cd ~/PhoneLight && git pull && sudo systemctl restart phonelight`.
+
 ## [0.8.3] - 2026-10-28
 
 ### Fixed

@@ -255,7 +255,10 @@ def create_app(start=True):
         """{kind: 'client' | 'ip', value, note?} -> refused from now on; connected matches are closed."""
         body = request.get_json(silent=True) or {}
         try:
-            kind, value = blocks.add(body.get('kind'), body.get('value'), body.get('note'))
+            value = body.get('value')
+            if body.get('kind') == 'client':
+                value = blocks.resolve_client(value, {g.client_id for g in list(rt.hub.guests.values())})
+            kind, value = blocks.add(body.get('kind'), value, body.get('note'))
         except ValueError as exc:
             return jsonify(error=str(exc)), 400
         attr = 'client_id' if kind == 'client' else 'ip'
