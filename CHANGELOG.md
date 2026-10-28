@@ -5,6 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/). Every change
 ships as its own version: the top section always matches `VERSION`.
 
+## [0.2.1] - 2026-10-28
+
+### Fixed
+- **Service failed to start on a fresh install** (`class uri 'gevent'
+  invalid or not found ... No module named 'packaging'`): gunicorn 26's
+  gevent worker imports `packaging` without declaring it. Added to
+  requirements.txt. Missed in testing because the dev venv had it through
+  pytest.
+- `install.sh` now loads the gevent worker and the app right after
+  installing packages, so a missing package stops the install with the
+  error instead of leaving a crashing service.
+
+Redeploy the server: `cd ~/PhoneLight && git pull && sudo systemctl restart phonelight`
+(start.sh installs the new requirement on that restart).
+
 ## [0.2.0] - 2026-10-28
 
 ### Removed

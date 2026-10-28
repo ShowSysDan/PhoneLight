@@ -1,6 +1,6 @@
 # PhoneLight
 
-Version **0.2.0** · see [CHANGELOG.md](CHANGELOG.md)
+Version **0.2.1** · see [CHANGELOG.md](CHANGELOG.md)
 
 Crowd lighting for festivals: the audience opens a web page on their phones,
 taps once, and their whole screen becomes a light that the lighting console

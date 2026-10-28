@@ -43,6 +43,9 @@ fi
 as_user "${VENV}/bin/pip" install --quiet --upgrade pip
 as_user "${VENV}/bin/pip" install --quiet -r "${APP_DIR}/requirements.txt"
 sha256sum "${APP_DIR}/requirements.txt" | cut -d' ' -f1 | as_user tee "${VENV}/.requirements.sha256" >/dev/null
+# Load what the service loads (the gevent worker + the app), so a missing package fails here, not in systemd
+(cd "$APP_DIR" && as_user "${VENV}/bin/python" -c 'import gunicorn.workers.ggevent, server.app') \
+    || error "The installed packages cannot run the server (see above). Report it with that error."
 info "Dependencies installed."
 
 # ── .env ─────────────────────────────────────────────────────────────────────
