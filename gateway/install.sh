@@ -239,16 +239,31 @@ step "Checks..."
 if command -v curl >/dev/null && curl -sf --max-time 4 "http://${UPSTREAM}/healthz" >/dev/null; then
     info "Glow server answers at http://${UPSTREAM}/healthz"
 else
-    warn "Can't reach http://${UPSTREAM}/healthz from here. Check the glow service, and that the tunnel /"
-    warn "firewall lets this server reach ${UPSTREAM} (TCP)."
+    warn "Can't reach http://${UPSTREAM}/healthz from here, so guests will get the \"getting ready\" page"
+    warn "(HTTP 503) until it can. Check the glow service, and that the tunnel / firewall lets this"
+    warn "server reach ${UPSTREAM} (TCP)."
 fi
-DNS_IP="$(getent ahostsv4 "$SITE" 2>/dev/null | awk 'NR==1{print $1}')"
+DNS_IP="$(getent ahostsv4 "$SITE" 2>/dev/null | awk 'NR==1{print $1}' || true)"
 if [ -z "$DNS_IP" ]; then
     warn "DNS: ${SITE} does not resolve yet. Point an A record at this server; Caddy gets the certificate once it does."
 elif ip -4 addr 2>/dev/null | grep -q "inet ${DNS_IP}/"; then
     info "DNS: ${SITE} -> ${DNS_IP} (this server)."
 else
     warn "DNS: ${SITE} -> ${DNS_IP}, which is not an address on this server (fine behind NAT; otherwise fix the A record)."
+fi
+if [ "$WWW" -eq 1 ]; then
+    # www must reach THIS Caddy too, or it can never get its certificate (a registrar's
+    # "URL forwarding" for www is the usual culprit: Let's Encrypt then reaches the registrar).
+    WWW_IP="$(getent ahostsv4 "www.${SITE}" 2>/dev/null | awk 'NR==1{print $1}' || true)"
+    if [ -z "$WWW_IP" ]; then
+        warn "DNS: www.${SITE} does not resolve. Add an A record for www (same IP as ${SITE}), or re-run with --no-www."
+    elif [ -n "$DNS_IP" ] && [ "$WWW_IP" != "$DNS_IP" ]; then
+        warn "DNS: www.${SITE} -> ${WWW_IP}, but ${SITE} -> ${DNS_IP}. Caddy can't get www's certificate"
+        warn "unless www points here too: give www an A record to ${DNS_IP} (and turn off any registrar"
+        warn "URL forwarding for www), or re-run with --no-www."
+    else
+        info "DNS: www.${SITE} -> ${WWW_IP} (same as ${SITE})."
+    fi
 fi
 
 echo -e "\n${CYAN}Done.${NC} Backups of what changed: $BACKUP"
