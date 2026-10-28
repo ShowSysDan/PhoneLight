@@ -5,6 +5,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/). Every change
 ships as its own version: the top section always matches `VERSION`.
 
+## [0.3.0] - 2026-10-28
+
+### Added
+- **Glow.lighting** branding: the product name on the guest page and the
+  admin (header, page titles). The code name PhoneLight stays for the repo,
+  folder, service and code, so install and update commands are unchanged.
+- **Glowing start screen:** the Glow.lighting wordmark has a white core
+  and a layered RGB halo, with a soft glow behind it and around the Tap to
+  start button, all slowly cycling through the colour wheel. Pure CSS (one
+  hue-rotate animation, no script, no images; guest page ~7 KB). Still for
+  phones set to reduced motion. Stops once the guest taps in.
+
+Redeploy the server: `cd ~/PhoneLight && git pull && sudo systemctl restart phonelight`.
+
 ## [0.2.1] - 2026-10-28
 
 ### Fixed

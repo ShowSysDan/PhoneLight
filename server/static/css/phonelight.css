@@ -41,6 +41,7 @@ a { color: var(--accent); text-decoration: none; }
 .header-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .logo { font-family: var(--mono); font-size: 20px; font-weight: 700; letter-spacing: -.5px;
   background: linear-gradient(90deg, var(--pink), var(--accent), var(--cyan)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.logo span { font-weight: 400; opacity: .8; }
 .version { font-size: 10px; color: var(--text-dim); font-family: var(--mono); background: var(--surface2);
   padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border); }
 .pill { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; padding: 4px 12px; border-radius: 20px; font-family: var(--mono);

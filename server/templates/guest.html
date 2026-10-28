@@ -5,21 +5,34 @@
 <meta name="theme-color" content="#000000">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<title>PhoneLight</title>
+<title>Glow.lighting</title>
 <style>
 html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
 #c{position:fixed;inset:0;background:#000}
 #go{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
   padding:24px;color:#fff;font:16px/1.4 system-ui,-apple-system,sans-serif;text-align:center;background:#000}
-#go b{font-size:28px;letter-spacing:.5px}
-#go button{font:inherit;font-size:20px;font-weight:600;color:#000;background:#fff;border:0;border-radius:40px;padding:16px 40px}
+/* wordmark: white core, layered RGB halo; the whole halo cycles hue (one compositor-friendly filter, no JS) */
+#go:before{content:'';position:absolute;left:50%;top:38%;width:140vw;height:60vh;transform:translate(-50%,-50%);
+  background:radial-gradient(closest-side,rgba(255,43,214,.28),rgba(122,92,255,.14) 45%,transparent 75%);
+  animation:hue 6s linear infinite;pointer-events:none}
+#w{position:relative;margin:0 0 6px;font:800 clamp(40px,13vw,76px)/1.05 system-ui,-apple-system,'Segoe UI',sans-serif;
+  letter-spacing:-.02em;color:#fff;white-space:nowrap;
+  text-shadow:0 0 3px #fff,0 0 10px #ff2bd6,0 0 22px #ff2bd6,0 0 40px #7a5cff,0 0 70px #00e5ff,0 0 110px #00e5ff;
+  animation:hue 6s linear infinite,breathe 3s ease-in-out infinite alternate}
+#w i{font-style:normal;font-weight:300}
+#go div,#go small{position:relative}
+#go button{position:relative;font:inherit;font-size:20px;font-weight:600;color:#000;background:#fff;border:0;border-radius:40px;
+  padding:16px 40px;box-shadow:0 0 18px #ff2bd6,0 0 42px #7a5cff;animation:hue 6s linear infinite}
+@keyframes hue{to{filter:hue-rotate(360deg)}}
+@keyframes breathe{from{opacity:.86}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){ #go:before,#w,#go button{animation:none} }
 #go small{max-width:340px;color:#999;font-size:12px}
 #s{position:fixed;left:0;right:0;bottom:8px;text-align:center;color:#fff;opacity:.35;font:11px system-ui,sans-serif;pointer-events:none}
 </style>
 </head><body>
 <div id="c"></div>
 <div id="go">
-<b>PhoneLight</b>
+<h1 id="w">Glow<i>.lighting</i></h1>
 <div>Turn your brightness up, then tap to join the light show.</div>
 <button id="b">Tap to start</button>
 <small>To run the show this page logs basic technical details about your device (IP address, browser,

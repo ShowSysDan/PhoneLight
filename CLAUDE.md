@@ -1,4 +1,7 @@
-# PhoneLight: notes for Claude
+# PhoneLight (Glow.lighting): notes for Claude
+
+Product name **Glow.lighting** in everything guests and admins see; code name
+PhoneLight for the repo, folder, service and code (don't rename those).
 
 Crowd lighting: phones open a page and become full-screen RGB lights driven
 by sACN. Flask + gevent, ONE process, SQLite for the trial (PostgreSQL if it
@@ -54,6 +57,10 @@ goes ahead). README.md has the design, install and performance figures.
 - Stays one small inline file (no frameworks, no external requests except
   /static/keepawake.mp4). Rendered once at startup. Check its size.
 - Wire format is in hub.py's docstring; change both ends together.
+- It is a Jinja template: never write `{#` in its CSS/JS (Jinja comment;
+  the server will not boot). Put a space after the `{`.
+- Start-screen glow is CSS only (one hue-rotate animation); no JS timers or
+  images for decoration, and keep the reduced-motion rule.
 
 ## Database (SQLite now, PostgreSQL later)
 - Migrations: a NEW `server/migrations/NNNN_name.sql` per change; never edit

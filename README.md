@@ -1,6 +1,11 @@
-# PhoneLight
+# Glow.lighting
 
-Version **0.2.1** · see [CHANGELOG.md](CHANGELOG.md)
+Version **0.3.0** · see [CHANGELOG.md](CHANGELOG.md)
+
+> **Glow.lighting** is the product name: it is what guests and the admin
+> see. The code name **PhoneLight** stays for the repo, the folder
+> (`~/PhoneLight`), the `phonelight` service and the code, so installs and
+> update commands don't change.
 
 Crowd lighting for festivals: the audience opens a web page on their phones,
 taps once, and their whole screen becomes a light that the lighting console
@@ -50,8 +55,10 @@ the crowd like any other RGB fixtures.
              phone            phone            phone    … (full-screen colour)
 ```
 
-- **Guest page** (`/`): one ~6 KB HTML file, no frameworks, no external
-  files. Tap to start → full screen, screen kept awake, WebSocket opened.
+- **Guest page** (`/`): one ~7 KB HTML file, no frameworks, no external
+  files. A **Glow.lighting** start screen whose wordmark and button glow
+  with a halo that cycles through the colour wheel (pure CSS, one animated
+  filter; still for guests whose phone asks for reduced motion). Tap to start → full screen, screen kept awake, WebSocket opened.
   Each colour arrives as 7 bytes (R, G, B + when to show it) and is painted
   at that moment (see [Keeping phones in sync](#keeping-phones-in-sync)).
   If the connection drops the phone goes black after 3 s and reconnects
