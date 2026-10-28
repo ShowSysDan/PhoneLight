@@ -87,3 +87,47 @@ def test_terminated_and_timeout_drop_source():
     r.handle(pkt(CID_B, seq=1), 'ip', now=1)
     assert r.merger.expire(1 + sacn.SOURCE_TIMEOUT + 0.1)
     assert not r.merger.sources
+
+
+def test_batch_acts_on_newest_packet_per_source_only():
+    r, frames = receiver()
+    batch = [(pkt(CID_A, seq=s, data=levels(c1=s)), 'ip', None) for s in range(1, 11)]
+    batch.append((pkt(CID_A, seq=1, universe=9), 'ip', None))          # other universe: counted, not stale
+    r.handle_batch(batch, now=0)
+    assert len(frames) == 1 and frames[0][0][0] == 10                  # one update, the newest levels
+    assert r.stale == 9 and r.packets == 11 and r.other_universes[9]['packets'] == 1
+
+
+def test_batch_timing_from_kernel_timestamps():
+    import time
+    r, frames = receiver()
+    r.handle_batch([(pkt(seq=1), 'ip', time.time() - 0.05)], now=100.0)
+    r._roll(101.0)
+    assert 45 <= r.timing['wait_avg'] <= 1000 and r.timing['proc_avg'] is not None
+
+
+def test_reader_drains_a_real_socket():
+    import socket
+    import threading
+    import time
+    got = []
+    done = threading.Event()
+
+    def on_frame(levels, live):
+        got.append(levels[0])
+        if levels[0] == 200:
+            done.set()
+    r = sacn.Receiver(lambda: 1, on_frame, bind='127.0.0.1', port=0)
+    sock = r._open()
+    port = sock.getsockname()[1]
+    tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    for s in range(1, 201):                                             # a backlog before we read
+        tx.sendto(pkt(seq=s % 256, data=levels(c1=s)), ('127.0.0.1', port))
+    tx.close()
+    threading.Thread(target=r._read, args=(sock,), daemon=True).start()
+    assert done.wait(3)
+    r.stop()
+    sock.close()
+    assert got[-1] == 200 and len(got) < 200 and r.stale > 0           # skipped to the newest
+    r._roll(time.monotonic())
+    assert r.timing['wait_max'] is not None and r.timing['wait_max'] < 3000   # Linux kernel timestamps

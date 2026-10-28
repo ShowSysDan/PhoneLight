@@ -21,8 +21,12 @@ goes ahead). README.md has the design, install and performance figures.
 - One process, one gunicorn gevent worker (start.sh). Never more workers:
   receiver, engine and sockets share memory. Use `threading` (gevent patches
   it) so the tests run without gevent.
-- The engine runs inside the sACN reader on every accepted packet; no
+- The engine runs inside the sACN reader on every accepted batch; no
   queues between receiver, engine and hub. Publish only on change.
+- Input is latest-wins too: `Receiver._read` drains the socket and
+  `handle_batch` uses only the newest packet per source (`stale` counts the
+  rest). Keep the timing (`Receiver.timing`) cheap: accumulators, rolled
+  once a second.
 - LATEST WINS, never queue frames for a phone. Fast path: hub.publish
   writes each fixture's pre-built frame (`hub.frame`) with one
   non-blocking send; anything else (busy sender, full buffer, partial

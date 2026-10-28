@@ -70,7 +70,9 @@
     setText($('s-fps'), num(d.engine.fps, 1));
     const fps = d.sacn.sources.reduce((a, s) => Math.max(a, s.fps), 0);
     setText($('s-sacn'), d.sacn.sources.length ? `${num(fps, 1)} fps` : '–');
-    setText($('s-sacn-sub'), `universe ${d.settings.universe}, ${d.sacn.sources.length} source(s)`);
+    const t = d.sacn.timing || {};
+    setText($('s-sacn-sub'), `universe ${d.settings.universe}, ${d.sacn.sources.length} source(s)` +
+      (t.proc_avg == null ? '' : ` · app ${num((t.wait_avg || 0) + t.proc_avg, 1)} ms`));
     const s = d.settings;
     setText($('fx-sub'), `${s.fixtures} × ${s.bit_depth}-bit RGB from address ${s.start_address} · master ${s.master}%`);
     document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === d.engine.mode));

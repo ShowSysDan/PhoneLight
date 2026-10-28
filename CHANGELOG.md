@@ -5,6 +5,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/). Every change
 ships as its own version: the top section always matches `VERSION`.
 
+## [0.4.0] - 2026-10-28
+
+### Added
+- **sACN timing on the sACN monitor** (and the Live page's sACN card):
+  how long packets waited in the server's receive buffer before the app read
+  them (Linux kernel timestamps), how long the app took from reading them to
+  handing the colours to the phones, and stale packets skipped. Tells you at
+  a glance whether a delay is in the server or before it.
+
+### Changed
+- **sACN input is latest-wins.** The reader takes everything waiting on the
+  socket at once and acts only on the newest packet of each source, so if
+  the app ever falls behind it skips stale levels instead of working
+  through a backlog (the receive buffer is 1 MB: a backlog there could have
+  held seconds of old packets).
+
+### Fixed
+- `tools/load_test.py`: fake phones could get a negative clock (random
+  offset of up to minus one hour), which the server rightly refuses to sync;
+  those phones showed frames on arrival and pulled the reported "shown"
+  times down. Offsets are now positive, like a real phone's clock.
+
+Redeploy the server: `cd ~/PhoneLight && git pull && sudo systemctl restart phonelight`.
+
 ## [0.3.1] - 2026-10-28
 
 ### Changed

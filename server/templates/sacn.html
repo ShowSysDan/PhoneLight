@@ -7,6 +7,15 @@
   <div class="card stat"><div class="k">Packets received</div><div class="v" id="s-packets">–</div><div class="s" id="s-ignored"></div></div>
   <div class="card stat"><div class="k">Merge</div><div class="v">HTP</div><div class="s">highest priority sources only</div></div>
 </div>
+<div class="stats" style="margin-top:12px">
+  <div class="card stat" title="From the packet arriving at this server's network card to the app reading it (kernel timestamp). High = the app is falling behind.">
+    <div class="k">Waiting to be read</div><div class="v" id="t-wait">–</div><div class="s" id="t-wait-max"></div></div>
+  <div class="card stat" title="From reading the packets to the colours being handed to every phone's connection.">
+    <div class="k">App processing</div><div class="v" id="t-proc">–</div><div class="s" id="t-proc-max"></div></div>
+  <div class="card stat" title="Older packets skipped because a newer one from the same source was already waiting. Should stay 0; rising = the app fell behind (and caught up by skipping).">
+    <div class="k">Stale packets skipped</div><div class="v" id="t-stale">–</div><div class="s" id="t-batch"></div></div>
+  <div class="card stat"><div class="k">Where's the delay?</div><div class="s" style="margin-top:4px">These two numbers are the whole server side. If they stay at a few ms, extra delay is before the packet reaches this server (console output, network) or the Sync delay setting.</div></div>
+</div>
 <div class="msg bad" id="err"></div>
 
 <div class="section-header"><div class="section-title">Sources</div></div>
@@ -64,6 +73,14 @@
     setText($('s-packets'), String(d.sacn.packets));
     setText($('s-ignored'), `${d.sacn.ignored} not E1.31 data / preview`);
     setText($('err'), d.sacn.error || '');
+    const t = d.sacn.timing || {};
+    const ms = (v) => v == null ? '–' : `${num(v, v < 10 ? 2 : 1)} ms`;
+    setText($('t-wait'), ms(t.wait_avg));
+    setText($('t-wait-max'), t.wait_max == null ? 'avg over the last second' : `max ${ms(t.wait_max)} (last second)`);
+    setText($('t-proc'), ms(t.proc_avg));
+    setText($('t-proc-max'), t.proc_max == null ? 'avg over the last second' : `max ${ms(t.proc_max)} (last second)`);
+    setText($('t-stale'), String(d.sacn.stale ?? 0));
+    setText($('t-batch'), t.batch_max ? `up to ${t.batch_max} packet(s) read at once` : '');
     setHTML($('sources'), d.sacn.sources.length ? d.sacn.sources.map((s) => `<tr><td>${esc(s.name)}</td><td class="mono">${esc(s.ip)}</td>` +
       `<td>${s.priority}</td><td class="mono">${num(s.fps, 1)}</td><td class="mono">${s.packets}</td><td class="mono">${s.out_of_order}</td>` +
       `<td class="mono">${num(s.age * 1000)} ms ago</td><td class="mono dim">${esc(s.cid)}</td></tr>`).join('')

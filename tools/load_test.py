@@ -69,7 +69,7 @@ def phone(url, i, until, stats):
     t0 = time.monotonic()
     last_frame = None
     gaps = []
-    skew = random.uniform(-3600e3, 3600e3)          # this phone's clock vs ours, ms
+    skew = random.uniform(0, 3600e3)                # this phone's clock vs ours, ms (performance.now() is never negative)
     clock = lambda: time.monotonic() * 1000 + skew  # noqa: E731  (its performance.now())
     samples, off, nsync, next_sync = [], None, 0, 0.0
     try:

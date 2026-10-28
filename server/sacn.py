@@ -10,12 +10,21 @@ only those at the highest priority count, and those are merged HTP (highest
 value per slot wins). A source that sends Stream_Terminated leaves at once.
 Preview packets and non-zero start codes are ignored.
 
-`Receiver.on_frame(levels, live)` is called after every accepted packet (and
-when the last source drops) with the merged 512 levels.
+Input is LATEST-WINS too: the reader takes everything waiting in the
+socket at once and acts only on the newest packet of each source, so if the
+app ever falls behind it skips stale levels instead of working through a
+backlog (counted as `stale`). Timing for the sACN monitor: how long packets
+waited in the kernel before we read them (SO_TIMESTAMPNS, Linux) and how
+long the app took from reading them to handing the colours to the phones.
+
+`Receiver.on_frame(levels, live)` is called after every batch that changed
+the merged 512 levels (and when the last source drops).
 """
 import logging
+import select
 import socket
 import struct
+import sys
 import threading
 import time
 
@@ -23,6 +32,10 @@ log = logging.getLogger('phonelight.sacn')
 
 PORT = 5568
 SOURCE_TIMEOUT = 2.5            # E1.31 network data loss
+DRAIN_MAX = 256                 # packets read per batch before yielding to the rest of the app
+# Kernel receive timestamps: Linux SO_TIMESTAMPNS (Python's socket module has no name for it;
+# 35 on every common Linux architecture). Elsewhere: no wait timing, everything else the same.
+_TS = getattr(socket, 'SO_TIMESTAMPNS', 35 if sys.platform.startswith('linux') else None)
 _ACN_ID = b'ASC-E1.17\x00\x00\x00'
 _VECTOR_ROOT_DATA = 0x00000004
 _VECTOR_FRAMING_DATA = 0x00000002
@@ -157,6 +170,10 @@ class Receiver:
         self.packets = 0
         self.ignored = 0               # not E1.31 data / preview / other start code
         self.other_universes = {}      # universe -> {ip, last_seen, packets}
+        self.stale = 0                 # older packets skipped because a newer one was waiting
+        self.timing = dict(wait_avg=None, wait_max=None, proc_avg=None, proc_max=None, batch_max=0)
+        self._acc = [0, 0.0, 0.0, 0, 0.0, 0.0, 0]  # waits n/sum/max, procs n/sum/max, batch max
+        self._acc_at = time.monotonic()
         self._sock = None
         self._stop = False
 
@@ -176,7 +193,13 @@ class Receiver:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1 << 20)
         except OSError:
             pass
+        if _TS is not None:
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, _TS, 1)   # kernel receive time on every packet
+            except OSError:
+                pass
         sock.bind((self.bind, self.port))
+        sock.setblocking(False)
         return sock
 
     def _run(self):
@@ -194,24 +217,81 @@ class Receiver:
                 time.sleep(5)
 
     def _read(self, sock):
+        anc = socket.CMSG_SPACE(16) if _TS is not None else 0
         while not self._stop:
-            buf, addr = sock.recvfrom(1144)
-            self.handle(buf, addr[0])
+            batch = []
+            while len(batch) < DRAIN_MAX:
+                try:
+                    buf, ancdata, _, addr = sock.recvmsg(1144, anc)
+                except (BlockingIOError, InterruptedError):
+                    break
+                kernel_ts = None
+                for level, kind, data in ancdata:
+                    if kind == _TS and len(data) >= 8:          # struct timespec: 2 x long (8 or 4 bytes)
+                        sec, nsec = struct.unpack_from('qq' if len(data) >= 16 else 'ii', data)
+                        kernel_ts = sec + nsec / 1e9
+                batch.append((buf, addr[0], kernel_ts))
+            if batch:
+                self.handle_batch(batch)
+                if len(batch) == DRAIN_MAX:
+                    time.sleep(0)              # a flood: let the phones' senders run between batches
+            else:
+                select.select([sock], [], [])  # wait for the next packet (cooperative under gevent)
 
     def handle(self, buf, ip, now=None):
+        """One packet (tests, and any caller without a batch)."""
+        self.handle_batch([(buf, ip, None)], now)
+
+    def handle_batch(self, batch, now=None):
+        """[(datagram, ip, kernel receive time or None)] read in one go: act
+        on the newest packet of each source in our universe only."""
+        t0 = time.perf_counter()
+        wall = time.time()
         now = time.monotonic() if now is None else now
-        self.packets += 1
-        pkt = parse(buf)
-        if pkt is None:
-            self.ignored += 1
-            return
-        if pkt.universe != self.get_universe():
-            seen = self.other_universes.setdefault(pkt.universe, {'packets': 0})
-            seen.update(ip=ip, last_seen=now)
-            seen['packets'] += 1
-            return
-        if self.merger.feed(pkt, ip, now):
+        universe = self.get_universe()
+        newest = {}
+        acc = self._acc
+        for buf, ip, kernel_ts in batch:
+            self.packets += 1
+            if kernel_ts is not None:
+                wait = max(0.0, wall - kernel_ts)
+                acc[0] += 1
+                acc[1] += wait
+                acc[2] = max(acc[2], wait)
+            pkt = parse(buf)
+            if pkt is None:
+                self.ignored += 1
+                continue
+            if pkt.universe != universe:
+                seen = self.other_universes.setdefault(pkt.universe, {'packets': 0})
+                seen.update(ip=ip, last_seen=now)
+                seen['packets'] += 1
+                continue
+            if pkt.cid in newest:
+                self.stale += 1
+            newest[pkt.cid] = (pkt, ip)
+        changed = False
+        for pkt, ip in newest.values():
+            changed |= self.merger.feed(pkt, ip, now)
+        if changed:
             self.on_frame(self.merger.levels, bool(self.merger.sources))
+        if newest:
+            proc = time.perf_counter() - t0
+            acc[3] += 1
+            acc[4] += proc
+            acc[5] = max(acc[5], proc)
+        acc[6] = max(acc[6], len(batch))
+        if now - self._acc_at >= 1.0:
+            self._roll(now)
+
+    def _roll(self, now):
+        a = self._acc
+        ms = lambda v: round(v * 1000, 2)  # noqa: E731
+        self.timing = dict(wait_avg=ms(a[1] / a[0]) if a[0] else None, wait_max=ms(a[2]) if a[0] else None,
+                           proc_avg=ms(a[4] / a[3]) if a[3] else None, proc_max=ms(a[5]) if a[3] else None,
+                           batch_max=a[6])
+        self._acc = [0, 0.0, 0.0, 0, 0.0, 0.0, 0]
+        self._acc_at = now
 
     def _watchdog(self):
         """Drop silent sources (no packet arrives to notice they are gone)."""
@@ -237,7 +317,10 @@ class Receiver:
         with self.merger.lock:
             sources = [s.info(now) for s in self.merger.sources.values()]
             levels = self.merger.levels
+        if now - self._acc_at > 2:                  # no packets lately: don't show old timing
+            self._roll(now)
         return dict(sources=sources, levels=list(levels), packets=self.packets, ignored=self.ignored,
+                    stale=self.stale, timing=self.timing,
                     error=self.error, listen=f'{self.bind}:{self.port}',
                     other_universes=[dict(universe=u, ip=s['ip'], packets=s['packets'])
                                      for u, s in sorted(self.other_universes.items())])

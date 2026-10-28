@@ -253,7 +253,7 @@ def create_app(start=True):
                 out = dict(engine=rt.engine.snapshot(), counts=rt.hub.counts(), connected=len(rt.hub.guests),
                            settings=settings.current(),
                            sacn={k: snap[k] for k in ('sources', 'packets', 'ignored', 'error', 'listen',
-                                                       'other_universes')})
+                                                       'other_universes', 'stale', 'timing')})
                 if 'levels' in views:
                     out['levels'] = snap['levels']
                 now = time.monotonic()

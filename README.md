@@ -1,6 +1,6 @@
 # glow.lighting
 
-Version **0.3.1** · see [CHANGELOG.md](CHANGELOG.md)
+Version **0.4.0** · see [CHANGELOG.md](CHANGELOG.md)
 
 > **glow.lighting** is the product name: it is what guests and the admin
 > see. The code name **PhoneLight** stays for the repo, the folder
@@ -24,6 +24,7 @@ the crowd like any other RGB fixtures.
 - [Using the admin](#using-the-admin)
 - [Testing without a console](#testing-without-a-console)
 - [Keeping phones in sync](#keeping-phones-in-sync)
+- [Finding a delay](#finding-a-delay)
 - [Performance](#performance)
 - [What is logged about guests](#what-is-logged-about-guests)
 - [Configuration (.env)](#configuration-env)
@@ -199,7 +200,7 @@ same priority to merge them HTP.
 | Page | What it shows / does |
 |---|---|
 | **Live** | Phones connected, average round-trip latency, output frames/s, sACN rate; a live swatch per fixture with its phone count. Output buttons: **Live sACN**, **Identify** (every fixture a different colour, to check groups), **Blackout**, **Rebalance groups**. **Test tools:** manual colour (all fixtures, or click one fixture) and patterns (chase / flash / rainbow); see [Testing without a console](#testing-without-a-console). Overrides and tests are not saved: a restart goes back to Live sACN. |
-| **sACN monitor** | Listening address, packet counts, every source (name, IP, priority, fps, out-of-order packets, CID), the 512 levels (fixture channels outlined R/G/B; hover a cell for fixture and colour). |
+| **sACN monitor** | Listening address, packet counts, every source (name, IP, priority, fps, out-of-order packets, CID), the 512 levels (fixture channels outlined R/G/B; hover a cell for fixture and colour). **Timing** (see [Finding a delay](#finding-a-delay)): how long packets waited before the app read them, how long the app took to hand the colours to the phones, and stale packets skipped. |
 | **Clients** | Phones connected now (fixture, IP, device, OS, browser, connected time, last and average latency). Client log: every browser seen, visits, total time, average latency, device details; click one for its sessions. *Clear log* deletes the history. |
 | **Settings** | Universe, start address, fixtures, 8/16-bit, master dimmer, sync delay, signal-loss hold and fade, how long client data is kept. Applied live, no restart. |
 
@@ -271,6 +272,30 @@ console. Three real browser tabs flashing together matched to within 1 ms.
 Real phones add their own screen timing (up to one refresh, ~16 ms at 60 Hz)
 and any asymmetry in their Wi-Fi path, so expect them to be within about one
 or two screen refreshes of each other.
+
+## Finding a delay
+
+If the crowd changes noticeably after the console, the sACN monitor's
+timing cards show how much of that is the server:
+
+- **Waiting to be read:** from the packet reaching this server's network
+  card to the app reading it (kernel timestamp, Linux).
+- **App processing:** from reading it to the colour being handed to every
+  phone's connection.
+
+Both measure a few milliseconds or less (0.3 ms and ~2 ms with 200 phones
+in testing). The input is latest-wins like the output: everything waiting is
+read in one go and only the newest packet of each source is used, so the app
+can never work through a backlog. **Stale packets skipped** counts what was
+skipped; it should stay at or near 0.
+
+Then the phones add the **Sync delay** (Settings, default 100 ms) on purpose
+so they change together. Set it lower (0 = no sync) to compare. The admin
+test tools go through exactly the same path from the engine onwards, so if
+they feel fast and the console doesn't, the difference is before the packet
+reaches the server: the console's output (cue times, output rate or delay
+settings), a node or converter in between, or the network path (Wi-Fi
+bridges, tunnels).
 
 ## Performance
 
