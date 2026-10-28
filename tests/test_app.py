@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 from sacn_packets import packet
-from simple_websocket import Client
+from simple_websocket import Client, ConnectionClosed
 
 from server import tracker
 
@@ -76,7 +76,7 @@ def receive_color(ws, want, timeout=3):
     end = time.monotonic() + timeout
     while time.monotonic() < end:
         msg = ws.receive(timeout=0.5)
-        if isinstance(msg, (bytes, bytearray)) and bytes(msg[:3]) == want and len(msg) == 7:
+        if isinstance(msg, (bytes, bytearray)) and bytes(msg[:-4]) == want:
             return True
         if isinstance(msg, str) and msg.startswith('p'):
             ws.send(msg)
@@ -86,6 +86,7 @@ def receive_color(ws, want, timeout=3):
 def test_pages(server):
     status, body = get(server, '/')
     assert status == 200 and b'/ws' in body and len(body) < 10000
+    assert b'<div id="n"></div>' in body and b"nid.textContent=id" in body     # client id, bottom right
     for path in ('/admin', '/admin/sacn', '/admin/clients', '/admin/settings', '/static/keepawake.mp4'):
         assert get(server, path)[0] == 200
 
@@ -135,6 +136,108 @@ def test_sacn_to_phone(server):
     status, body = get(server, '/admin/api/clients/integration-test-1/sessions')
     sess = json.loads(body)['rows'][0]
     assert sess['disconnected_at'] and sess['close_reason']
+
+
+def test_cells_to_phone(server):
+    assert post(server, '/admin/api/settings', {'fixtures': 1, 'bit_depth': 8, 'start_address': 1,
+                                                'cells': 2, 'cell_columns': 2})[0] == 200
+    ws = Client.connect(server['base'].replace('http', 'ws') + '/ws')
+    try:
+        ws.send(json.dumps({'id': 'integration-test-cells'}))
+        assert ws.receive(timeout=3) == 'f1' and ws.receive(timeout=3) == 'l2,2'
+        data = bytearray(512)
+        data[0:6] = b'\x10\x20\x30\x40\x50\x60'
+        send_sacn(server, data, 10)
+        assert receive_color(ws, b'\x10\x20\x30\x40\x50\x60')
+        assert post(server, '/admin/api/mode', {'mode': 'color', 'color': '#ff0000', 'fixture': 1, 'cell': 2})[0] == 200
+        assert receive_color(ws, b'\x10\x20\x30\xff\x00\x00')
+        assert post(server, '/admin/api/mode', {'mode': 'color', 'color': '#ff0000', 'fixture': 1, 'cell': 3})[0] == 400
+        post(server, '/admin/api/mode', {'mode': 'sacn'})
+        post(server, '/admin/api/settings', {'cells': 1, 'cell_columns': 1})          # back to one cell, live
+        for _ in range(20):
+            if ws.receive(timeout=1) == 'l1,1':
+                break
+        else:
+            raise AssertionError('no layout message after the change')
+        assert receive_color(ws, b'\x10\x20\x30')
+    finally:
+        ws.close()
+        post(server, '/admin/api/mode', {'mode': 'sacn'})
+        post(server, '/admin/api/settings', {'cells': 1, 'cell_columns': 1})
+
+
+def test_kick_and_block(server):
+    url = server['base'].replace('http', 'ws') + '/ws'
+
+    def join(cid):
+        ws = Client.connect(url)
+        ws.send(json.dumps({'id': cid}))
+        return ws
+
+    def shut(ws):
+        try:
+            ws.close()
+        except ConnectionClosed:                                # the server closed it already
+            pass
+
+    def until(ws, want):
+        for _ in range(40):
+            try:
+                m = ws.receive(timeout=0.5)
+                if isinstance(m, str) and m.startswith(want):
+                    return True
+            except ConnectionClosed:
+                return False
+        return False
+
+    def live_sid(cid):
+        for _ in range(30):                                     # the connected list is on the admin feed
+            snap = {}
+            adm = Client.connect(server['base'].replace('http', 'ws') + '/ws/admin')
+            try:
+                adm.send(json.dumps({'views': ['guests']}))
+                for _ in range(20):
+                    snap = json.loads(adm.receive(timeout=1))
+                    if 'guests' in snap:
+                        break
+            finally:
+                adm.close()
+            for g in snap.get('guests', {}).get('guests', []):
+                if g['client_id'] == cid:
+                    return g['sid']
+            time.sleep(0.2)
+        raise AssertionError('guest not listed')
+
+    ws = join('kick-test-0001')
+    try:
+        assert until(ws, 'f')
+        assert post(server, '/admin/api/clients/kick', {'sid': live_sid('kick-test-0001')})[1]['kicked'] == 1
+        assert until(ws, 'k')
+    finally:
+        shut(ws)
+
+    ws = join('block-test-0001')
+    try:
+        assert until(ws, 'f')
+        status, body = post(server, '/admin/api/blocks', {'kind': 'client', 'value': 'block-test-0001', 'note': 't'})
+        assert status == 200 and body['kicked'] == 1
+        assert until(ws, 'x')
+    finally:
+        shut(ws)
+    ws = join('block-test-0001')                               # refused at once on reconnect
+    try:
+        assert ws.receive(timeout=3) == 'x'
+    finally:
+        shut(ws)
+    assert post(server, '/admin/api/blocks', {'kind': 'ip', 'value': 'not-an-ip'})[0] == 400
+    rows = json.loads(get(server, '/admin/api/blocks')[1])['rows']
+    assert rows[0]['value'] == 'block-test-0001' and rows[0]['refused'] == 1
+    assert post(server, '/admin/api/blocks/remove', {'kind': 'client', 'value': 'block-test-0001'})[0] == 200
+    ws = join('block-test-0001')
+    try:
+        assert ws.receive(timeout=3).startswith('f')             # welcome back
+    finally:
+        shut(ws)
 
 
 def test_settings_validation(server):

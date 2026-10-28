@@ -35,9 +35,10 @@
   const { $, api } = PL;
   const form = $('form');
   function footprint() {
-    const f = +form.fixtures.value, per = +form.bit_depth.value === 16 ? 6 : 3, start = +form.start_address.value;
-    const last = start + f * per - 1;
-    $('footprint').textContent = `Fixtures use channels ${start}–${last} (${f} × ${per} ch)` + (last > 512 ? ' — past 512!' : '');
+    const f = +form.fixtures.value, cells = +form.cells.value, start = +form.start_address.value;
+    const per = (+form.bit_depth.value === 16 ? 6 : 3) * cells, last = start + f * per - 1;
+    $('footprint').textContent = `Fixtures use channels ${start}–${last} (${f} × ${per} ch` +
+      (cells > 1 ? `: ${cells} cells each` : '') + ')' + (last > 512 ? ' — past 512!' : '');
   }
   form.oninput = footprint;
   footprint();

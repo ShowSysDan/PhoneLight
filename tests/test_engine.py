@@ -10,12 +10,12 @@ def lv(*values, at=1):
 
 
 def test_8bit_mapping():
-    v = dict(start_address=10, fixtures=2, bit_depth=8)
+    v = dict(start_address=10, fixtures=2, bit_depth=8, cells=1)
     assert engine.fixture_colors(lv(1, 2, 3, 4, 5, 6, at=10), v) == [b'\x01\x02\x03', b'\x04\x05\x06']
 
 
 def test_16bit_mapping_rounds_to_8bit():
-    v = dict(start_address=1, fixtures=1, bit_depth=16)
+    v = dict(start_address=1, fixtures=1, bit_depth=16, cells=1)
     assert engine.fixture_colors(lv(255, 255, 128, 0, 0, 0), v) == [bytes((255, 128, 0))]
     assert engine.fixture_colors(lv(0, 128, 0, 0, 0, 0), v) == [bytes((0, 0, 0))]   # 0.498 -> 0
     assert engine.fixture_colors(lv(0, 129, 0, 0, 0, 0), v) == [bytes((1, 0, 0))]   # 0.502 -> 1
@@ -120,3 +120,70 @@ def test_unlit_fixtures_flag_a_patch_problem(eng):
     assert e.snapshot()['unlit'] == []
     e.on_frame(lv(255, 0, 0), True)                          # a new signal: checked afresh
     assert e.snapshot()['unlit'] == [2]
+
+
+def test_cells_mapping():
+    v = dict(start_address=2, fixtures=2, bit_depth=8, cells=2)
+    assert engine.fixture_colors(lv(*range(1, 13), at=2), v) == [bytes(range(1, 7)), bytes(range(7, 13))]
+    v = dict(start_address=1, fixtures=1, bit_depth=16, cells=2)
+    assert engine.fixture_colors(lv(255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255), v) == [bytes((255, 0, 0, 0, 0, 255))]
+
+
+@pytest.fixture
+def cells_eng(env):
+    settings.save({'fixtures': 2, 'cells': 3, 'cell_columns': 3, 'master': 100})
+    out = []
+    return engine.Engine(out.append), out
+
+
+def test_cells_live_and_unlit(cells_eng):
+    e, out = cells_eng
+    e.on_frame(lv(0, 0, 0, 0, 0, 0, 9, 9, 9), True)          # only fixture 1 cell 3
+    assert out[-1] == [bytes(6) + b'\x09' * 3, bytes(9)]
+    assert e.snapshot()['fixtures'][0] == ['#000000', '#000000', '#090909']
+    assert e.snapshot()['unlit'] == [2]
+
+
+def test_cells_test_modes(cells_eng):
+    e, out = cells_eng
+    red = b'\xff\x00\x00'
+    e.set_mode('color', red)
+    assert out[-1] == [red * 3] * 2
+    e.set_mode('color', b'\x00\x00\xff', fixture=2, cell=2)
+    assert out[-1] == [red * 3, red + b'\x00\x00\xff' + red]
+    with pytest.raises(ValueError):
+        e.set_mode('color', red, fixture=1, cell=4)
+    with pytest.raises(ValueError):
+        e.set_mode('color', red, cell=1)                      # a cell needs its fixture
+    e.set_mode('blackout')
+    assert out[-1] == [bytes(9)] * 2
+    e.set_mode('identify')
+    assert all(len(c) == 9 and c[:3] == c[3:6] == c[6:] for c in out[-1])
+
+
+def test_cells_patterns():
+    w, b = b'\xff\xff\xff', engine.BLACK
+    assert engine.pattern_colors('chase', w, 1, 2, 0.0, cells=2) == [w + b, b + b]
+    assert engine.pattern_colors('chase', w, 1, 2, 2.5, cells=2) == [b + b, w + b]   # 3rd cell: fixture 2 cell 1
+    assert engine.pattern_colors('flash', w, 1, 2, 0.1, cells=2) == [w * 2] * 2
+    rb = engine.pattern_colors('rainbow', w, 1, 2, 0.0, cells=2)
+    assert len(rb) == 2 and len(set(rb[0][k:k + 3] for k in (0, 3))) == 2
+
+
+def test_cell_count_change_republishes(cells_eng):
+    e, out = cells_eng
+    e.set_mode('color', b'\x01\x02\x03')
+    settings.save({'cells': 1})
+    e.recompute()
+    assert out[-1] == [b'\x01\x02\x03'] * 2                  # manual colours fitted to the new size
+    n = len(out)
+    e.recompute()                                             # republished even when unchanged
+    assert len(out) == n + 1
+
+
+def test_settings_cells_footprint(env):
+    with pytest.raises(ValueError, match='past 512'):
+        settings.save({'fixtures': 30, 'cells': 6, 'bit_depth': 8, 'start_address': 1})   # 540 channels
+    assert settings.save({'fixtures': 28, 'cells': 6, 'start_address': 1})['cells'] == 6
+    with pytest.raises(ValueError):
+        settings.save({'cells': 41})

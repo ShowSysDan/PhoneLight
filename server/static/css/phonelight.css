@@ -76,6 +76,8 @@ button, .btn { font: inherit; font-weight: 500; color: var(--text); background: 
 button:hover { border-color: rgba(255,255,255,.3); }
 button.on { background: rgba(167,139,250,.22); border-color: var(--accent); color: #fff; }
 button.danger { color: var(--danger); border-color: rgba(239,68,68,.45); }
+button.small { padding: 3px 9px; font-size: 12px; }
+.nowrap { white-space: nowrap; }
 button.primary { background: var(--accent); color: #0b0716; border-color: var(--accent); font-weight: 600; }
 input, select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border-hover); border-radius: 6px; padding: 7px 10px; }
 input[type=color] { padding: 2px; width: 44px; height: 36px; cursor: pointer; }
@@ -94,7 +96,9 @@ input[type=color] { padding: 2px; width: 44px; height: 36px; cursor: pointer; }
 .fixtures { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
 .fx { border-radius: var(--radius); border: 1px solid var(--border-hover); overflow: hidden; background: var(--surface); cursor: pointer; }
 .fx:hover { border-color: var(--accent); }
-.fx .sw { height: 74px; background: #000; }
+.fx .sw { height: 74px; background: #000; display: grid; gap: 1px; }
+.fx .sw > div { background: #000; }
+.fx .sw > div:hover { outline: 1px solid var(--accent); outline-offset: -1px; }
 .fx .lbl { display: flex; justify-content: space-between; padding: 5px 8px; font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
 .fx .lbl b { color: var(--text); }
 

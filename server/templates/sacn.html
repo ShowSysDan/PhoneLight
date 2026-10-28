@@ -38,18 +38,19 @@
   const cells = [];
   let layout = '';
   function build(s) {
-    const key = `${s.start_address}/${s.fixtures}/${s.bit_depth}`;
+    const key = `${s.start_address}/${s.fixtures}/${s.bit_depth}/${s.cells}`;
     if (key === layout) return;
     layout = key;
-    const per = s.bit_depth === 16 ? 6 : 3, first = s.start_address, last = first + s.fixtures * per - 1;
+    const cw = s.bit_depth === 16 ? 6 : 3, per = cw * s.cells, first = s.start_address, last = first + s.fixtures * per - 1;
     const colors = ['#ef4444', '#22c55e', '#3b82f6'];
     let html = '';
     for (let ch = 1; ch <= 512; ch++) {
       let cls = '', style = '', title = `ch ${ch}`;
       if (ch >= first && ch <= last) {
-        const off = ch - first, fx = Math.floor(off / per) + 1, comp = Math.floor((off % per) / (per / 3));
+        const off = ch - first, fx = Math.floor(off / per) + 1, cell = Math.floor((off % per) / cw) + 1;
+        const comp = Math.floor((off % cw) / (cw / 3));
         cls = 'fxc'; style = ` style="--c:${colors[comp]}"`;
-        title += ` · fixture ${fx} ${'RGB'[comp]}${per === 6 ? (off % 2 ? ' fine' : ' coarse') : ''}`;
+        title += ` · fixture ${fx}${s.cells > 1 ? ` cell ${cell}` : ''} ${'RGB'[comp]}${cw === 6 ? (off % 2 ? ' fine' : ' coarse') : ''}`;
       }
       html += `<div class="${cls}"${style} title="${title}"><i></i><span>${ch}</span><b>0</b></div>`;
     }

@@ -17,7 +17,7 @@ import uuid
 
 from flask import Flask, abort, jsonify, render_template, request
 from flask_sock import ConnectionClosed, Sock
-from . import config, migrate, settings, tracker
+from . import blocks, config, migrate, settings, tracker
 from .engine import Engine
 from .hub import Guest, Hub
 from .proxy import ProxyHeaders
@@ -34,7 +34,7 @@ class Runtime:
 
     def __init__(self):
         v = settings.current()
-        self.hub = Hub(v['fixtures'])
+        self.hub = Hub(v['fixtures'], v['cells'], v['cell_columns'])
         self.hub.delay_ms = v['sync_delay']
         self.engine = Engine(self.hub.publish)
         self.receiver = Receiver(lambda: settings.current()['universe'], self.engine.on_frame,
@@ -47,6 +47,8 @@ class Runtime:
         self.hub.delay_ms = new['sync_delay']
         if new['fixtures'] != old['fixtures']:
             self.hub.resize(new['fixtures'])
+        if (new['cells'], new['cell_columns']) != (old['cells'], old['cell_columns']):
+            self.hub.set_layout(new['cells'], new['cell_columns'])
         if new['universe'] != old['universe']:
             self.receiver.universe_changed()
         self.engine.recompute()
@@ -83,6 +85,7 @@ def create_app(start=True):
     logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s: %(message)s')
     migrate.migrate(out=log.info)
     settings.load()
+    blocks.load()
 
     app = Flask(__name__)
     app.config['SOCK_SERVER_OPTIONS'] = {'max_message_size': 4096}
@@ -129,6 +132,13 @@ def create_app(start=True):
         if not isinstance(hello, dict):
             hello = {}
         client_id = hello['id'] if tracker.valid_id(hello.get('id')) else uuid.uuid4().hex
+        if blocks.is_blocked(client_id, request.remote_addr):
+            try:
+                ws.send('x')                # blocked: the page stops reconnecting
+            except ConnectionClosed:
+                pass
+            ws.close()
+            return
         info = tracker.describe(request.headers.get('User-Agent'), hello)
         raw = getattr(ws.sock, '_sock', None)           # gevent: the non-blocking OS socket
         guest = Guest(uuid.uuid4().hex, client_id, request.remote_addr, info,
@@ -183,7 +193,7 @@ def create_app(start=True):
     # ── admin API ──────────────────────────────────────────────────────────
     @app.post('/admin/api/mode')
     def api_mode():
-        """{mode, color?: '#rrggbb', fixture?: n, pattern?, rate?} -> the Live page's
+        """{mode, color?: '#rrggbb', fixture?: n, cell?: n, pattern?, rate?} -> the Live page's
         output and test tools (all made inside the engine; nothing is sent as sACN)."""
         body = request.get_json(silent=True) or {}
         color = None
@@ -196,13 +206,14 @@ def create_app(start=True):
                 return jsonify(error='colour must be #rrggbb'), 400
         try:
             fixture = int(body['fixture']) if body.get('fixture') is not None else None
+            cell = int(body['cell']) if body.get('cell') is not None else None
             rate = float(body['rate']) if body.get('rate') is not None else None
-            rt.engine.set_mode(body.get('mode', 'sacn'), color, fixture, body.get('pattern'), rate)
+            rt.engine.set_mode(body.get('mode', 'sacn'), color, fixture, body.get('pattern'), rate, cell)
         except (TypeError, ValueError) as exc:
             return jsonify(error=str(exc)), 400
         if not body.get('quiet'):
             log.info('mode -> %s %s', rt.engine.mode,
-                     {k: body[k] for k in ('color', 'fixture', 'pattern', 'rate') if k in body})
+                     {k: body[k] for k in ('color', 'fixture', 'cell', 'pattern', 'rate') if k in body})
         return jsonify(rt.engine.snapshot())
 
     @app.post('/admin/api/rebalance')
@@ -226,6 +237,41 @@ def create_app(start=True):
         rows = tracker.client_rows(limit, offset, request.args.get('q', ''))
         return jsonify(rows=rows, summary=tracker.summary(), dropped=tracker.dropped,
                        queued=tracker.queued())
+
+    @app.post('/admin/api/clients/kick')
+    def api_kick():
+        """{sid} -> disconnect that phone (it reconnects by itself: a reset, not a ban)."""
+        sid = (request.get_json(silent=True) or {}).get('sid')
+        n = rt.hub.kick(lambda g: g.sid == sid)
+        log.info('kicked %s (%d)', sid, n)
+        return jsonify(kicked=n)
+
+    @app.get('/admin/api/blocks')
+    def api_blocks():
+        return jsonify(rows=blocks.rows())
+
+    @app.post('/admin/api/blocks')
+    def api_block():
+        """{kind: 'client' | 'ip', value, note?} -> refused from now on; connected matches are closed."""
+        body = request.get_json(silent=True) or {}
+        try:
+            kind, value = blocks.add(body.get('kind'), body.get('value'), body.get('note'))
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        attr = 'client_id' if kind == 'client' else 'ip'
+        n = rt.hub.kick(lambda g: getattr(g, attr) == value, bye='x', why='blocked by admin')
+        log.info('blocked %s %s (%d connected closed)', kind, value, n)
+        return jsonify(kind=kind, value=value, kicked=n)
+
+    @app.post('/admin/api/blocks/remove')
+    def api_unblock():
+        body = request.get_json(silent=True) or {}
+        try:
+            blocks.remove(body.get('kind'), body.get('value'))
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        log.info('unblocked %s %s', body.get('kind'), body.get('value'))
+        return jsonify(ok=True)
 
     @app.get('/admin/api/clients/<client_id>/sessions')
     def api_client_sessions(client_id):
