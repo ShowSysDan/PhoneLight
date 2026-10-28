@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/). Every change
 ships as its own version: the top section always matches `VERSION`.
 
+## [0.8.1] - 2026-10-28
+
+### Fixed
+- Start-screen glow not cycling colour in Edge and iOS Safari (it did in
+  Firefox). The hue animation ran from no filter to `hue-rotate(360deg)`,
+  which looks the same as its start; engines that blend the colour matrix,
+  or won't blend from `none`, showed no change. It now has explicit steps
+  (0, 120, 240, 360 degrees). Still one CSS animation, still off for guests
+  whose phone asks for reduced motion.
+
+Redeploy: `cd ~/PhoneLight && git pull && sudo systemctl restart phonelight`.
+
 ## [0.8.0] - 2026-10-28
 
 ### Added
