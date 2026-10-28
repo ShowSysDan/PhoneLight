@@ -5,6 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/). Every change
 ships as its own version: the top section always matches `VERSION`.
 
+## [0.6.0] - 2026-10-28
+
+### Changed (security)
+- **`TRUST_PROXY` is now the gateway's address** (e.g. `TRUST_PROXY=10.201.4.9`,
+  IPs or networks), not just `1`. X-Forwarded-For / -Proto are believed only
+  from that address; anyone else's are ignored, so nobody can claim another
+  IP by sending the header. Before, `TRUST_PROXY=1` believed it from anyone,
+  which also let a forged header get past `ADMIN_ALLOW`.
+- **The admin is never served through the gateway**, whatever headers a
+  request carries: a compromised VPS can't reach it through the tunnel.
+- `ADMIN_ALLOW` is always checked against the real connecting address.
+- `TRUST_PROXY=1` keeps working (warning logged at start), and any request
+  that carries X-Forwarded-For is then refused the admin. Replace it with
+  the gateway's address.
+- The gateway installer prints the exact `TRUST_PROXY` value (its own
+  address on the route to the glow server) and recommends `ADMIN_ALLOW`.
+
+Redeploy the server: `cd ~/PhoneLight && git pull && sudo systemctl restart phonelight`,
+after setting `TRUST_PROXY=<gateway address>` (and `ADMIN_ALLOW`) in `.env`.
+Gateway (optional, for the new hint): `cd /opt/glow-gateway-src && sudo git pull`.
+
 ## [0.5.1] - 2026-10-28
 
 ### Fixed

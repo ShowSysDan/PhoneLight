@@ -89,7 +89,11 @@ goes ahead). README.md has the design, install and performance figures.
 - One `/ws/admin` feed per page (~10 Hz); pages ask for extras with
   `{"views": [...]}` (`levels`, `guests` at 1 Hz). Escape every value
   (`PL.esc`); write the DOM only on change (`PL.setText` / `setHTML`).
-- No sign-in yet; `ADMIN_ALLOW` limits /admin by IP.
+- No sign-in yet; `ADMIN_ALLOW` limits /admin by IP, checked against the REAL
+  peer (`environ['phonelight.peer']`), never a forwarded address.
+- server/proxy.py: X-Forwarded-* believed only from `TRUST_PROXY` addresses
+  (the gateway); requests through it are `phonelight.via_proxy` and never get
+  the admin. Don't reintroduce ProxyFix or trust headers from anyone.
 
 ## Tests
 `venv/bin/python -m pytest tests/` (starts a real server in a subprocess;

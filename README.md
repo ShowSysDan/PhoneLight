@@ -1,6 +1,6 @@
 # glow.lighting
 
-Version **0.5.1** · see [CHANGELOG.md](CHANGELOG.md)
+Version **0.6.0** · see [CHANGELOG.md](CHANGELOG.md)
 
 > **glow.lighting** is the product name: it is what guests and the admin
 > see. The code name **PhoneLight** stays for the repo, the folder
@@ -357,7 +357,7 @@ editing: `sudo systemctl restart phonelight`.
 | `SACN_PORT` | 5568 | sACN UDP port |
 | `DB_PATH` | data/phonelight.db | SQLite file (relative = inside the app directory) |
 | `MAX_CONNECTIONS` | 4000 | Open sockets the server accepts |
-| `TRUST_PROXY` | off | Set 1 only behind the gateway / a reverse proxy (see [the gateway](#public-access-the-gateway-https-glowlighting)) |
+| `TRUST_PROXY` | off | Behind the gateway: the gateway's address as this server sees it (e.g. `10.201.4.9`). Only its forwarded headers are believed, and requests through it never get the admin (see [the gateway](#public-access-the-gateway-https-glowlighting)) |
 | `ACCESS_LOG` | off | 1 = log every HTTP request |
 
 Show settings are on the admin Settings page (stored in the database).
@@ -374,7 +374,10 @@ For the 321T team, so that their installer shares Caddy the same way:
 **[docs/321theater/SHARED_CADDY.md](docs/321theater/SHARED_CADDY.md)** (guide +
 a tested patch for their `gateway/install.sh`).
 
-On the glow server, set `TRUST_PROXY=1` in `.env` once it is behind the gateway.
+On the glow server, set `TRUST_PROXY` to the gateway's address (the installer
+prints it, e.g. `TRUST_PROXY=10.201.4.9`) and `ADMIN_ALLOW` to the building
+network. Then guests' real IPs are logged, nobody can fake one, and the admin
+can't be reached through the gateway even if the VPS were compromised.
 
 ## Updating, logs, backups, uninstall
 

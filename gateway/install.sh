@@ -267,6 +267,13 @@ if [ "$WWW" -eq 1 ]; then
 fi
 
 echo -e "\n${CYAN}Done.${NC} Backups of what changed: $BACKUP"
-echo "On the glow server: set TRUST_PROXY=1 in ~/PhoneLight/.env, then: sudo systemctl restart phonelight"
+# The address the glow server sees this gateway as: our source address on the route to it.
+UP_HOST="${UPSTREAM%:*}"
+UP_IP="$(getent ahostsv4 "$UP_HOST" 2>/dev/null | awk 'NR==1{print $1}' || true)"
+SRC_IP="$(ip route get "${UP_IP:-$UP_HOST}" 2>/dev/null | grep -o 'src [0-9.]*' | awk '{print $2}' || true)"
+echo "On the glow server, in ~/PhoneLight/.env:"
+echo "    TRUST_PROXY=${SRC_IP:-<address the glow server sees this gateway as>}"
+echo "    ADMIN_ALLOW=<your building network, e.g. 10.201.2.0/24>   (recommended)"
+echo "  then: sudo systemctl restart phonelight"
 echo "Guests: https://${SITE}/   Admin: only on the building network (http://${UPSTREAM}/admin)"
 echo "Update later: git pull, then sudo bash install.sh (settings are remembered)."
