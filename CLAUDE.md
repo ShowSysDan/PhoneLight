@@ -64,7 +64,9 @@ goes ahead). README.md has the design, install and performance figures.
 - It is a Jinja template: never write `{#` in its CSS/JS (Jinja comment;
   the server will not boot). Put a space after the `{`.
 - Start-screen glow is CSS only (one hue-rotate animation); no JS timers or
-  images for decoration, and keep the reduced-motion rule.
+  images for decoration. Reduced motion keeps the colour cycle (the user's
+  call: it changes colour, nothing moves) at 12 s, without the pulse; never
+  add movement (sliding, scaling, parallax) to the start screen.
 
 ## Gateway (gateway/: Caddy on the VPS, shared with 321T)
 - Shared-Caddy convention: main Caddyfile = global options + `import

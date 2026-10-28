@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/). Every change
 ships as its own version: the top section always matches `VERSION`.
 
+## [0.8.2] - 2026-10-28
+
+### Changed
+- The start-screen glow now also cycles colour for guests whose phone asks
+  for reduced motion (iOS Reduce Motion, Windows animation effects off,
+  Android "remove animations", often on in battery saver). Nothing on the
+  start screen moves, so they get the colour change at half speed (12 s a
+  turn) without the wordmark's brightness pulse.
+
+Redeploy: `cd ~/PhoneLight && git pull && sudo systemctl restart phonelight`.
+
 ## [0.8.1] - 2026-10-28
 
 ### Fixed

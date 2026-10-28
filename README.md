@@ -1,6 +1,6 @@
 # glow.lighting
 
-Version **0.8.1** · see [CHANGELOG.md](CHANGELOG.md)
+Version **0.8.2** · see [CHANGELOG.md](CHANGELOG.md)
 
 > **glow.lighting** is the product name: it is what guests and the admin
 > see. The code name **PhoneLight** stays for the repo, the folder
@@ -63,7 +63,8 @@ RGB, like a pixel bar.
 - **Guest page** (`/`): one ~10 KB HTML file, no frameworks, no external
   files. A **glow.lighting** start screen whose wordmark and button glow
   with a halo that cycles through the colour wheel (pure CSS, one animated
-  filter; still for guests whose phone asks for reduced motion). Tap to start → full screen, screen kept awake, WebSocket opened.
+  filter; for guests whose phone asks for reduced motion it still changes colour,
+  at half speed, without the wordmark's pulse: nothing on it moves). Tap to start → full screen, screen kept awake, WebSocket opened.
   Each colour arrives as 7 bytes (R, G, B + when to show it; 3 more bytes
   per extra cell) and is painted at that moment (see
   [Keeping phones in sync](#keeping-phones-in-sync)). The phone's client id
