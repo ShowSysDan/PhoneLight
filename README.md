@@ -1,6 +1,6 @@
 # glow.lighting
 
-Version **0.8.2** · see [CHANGELOG.md](CHANGELOG.md)
+Version **0.8.4** · see [CHANGELOG.md](CHANGELOG.md)
 
 > **glow.lighting** is the product name: it is what guests and the admin
 > see. The code name **PhoneLight** stays for the repo, the folder
@@ -67,8 +67,8 @@ RGB, like a pixel bar.
   at half speed, without the wordmark's pulse: nothing on it moves). Tap to start → full screen, screen kept awake, WebSocket opened.
   Each colour arrives as 7 bytes (R, G, B + when to show it; 3 more bytes
   per extra cell) and is painted at that moment (see
-  [Keeping phones in sync](#keeping-phones-in-sync)). The phone's client id
-  (the one on the admin Clients page) is printed small in the bottom-right
+  [Keeping phones in sync](#keeping-phones-in-sync)). The first 8 characters
+  of the phone's client id (as on the admin Clients page) are printed small in the bottom-right
   corner: white on the start screen, black once the show is running.
   If the connection drops the phone goes black after 3 s and reconnects
   (with a random delay, so a server restart is not hit by every phone at once).
@@ -238,8 +238,10 @@ On the **Clients** page:
 - **Block** (client id) disconnects it at once, and every time it tries
   again it is refused. The phone goes black with "This device can't join the
   show" and stops reconnecting. Blocks are kept in the database, so they
-  survive a restart, until you press *Unblock*. You can also type a client
-  id (the one printed bottom right on the phone) into the Blocked form.
+  survive a restart, until you press *Unblock*. You can also type the client
+  id printed bottom right on the phone (8 characters, as the Clients page
+  shows it) into the Blocked form; it is matched to the full id of a
+  connected or logged phone (type more if two start the same way).
 - **Block IP** refuses every phone on that address. Behind a venue Wi-Fi or
   a mobile network's NAT many guests share one address, so this can block a
   whole crowd. Use it only for a lone device on its own address.

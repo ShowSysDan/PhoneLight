@@ -11,9 +11,9 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none
 #c{position:fixed;inset:0;background:#000;display:grid}
 #go{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
   padding:24px;color:#fff;font:16px/1.4 system-ui,-apple-system,sans-serif;text-align:center;background:#000}
-/* wordmark: white core, RGB halo; the halo cycles hue (one filter, no JS). hue has steps: 0 and 360deg look alike to some engines */
+/* white wordmark, RGB halo cycling hue (one filter, no JS). Halo: opaque on black + eased stops (no banding) */
 #go:before{content:'';position:absolute;left:50%;top:38%;width:140vw;height:60vh;transform:translate(-50%,-50%);
-  background:radial-gradient(closest-side,rgba(255,43,214,.28),rgba(122,92,255,.14) 45%,transparent 75%);
+  background:radial-gradient(closest-side,#4c0d40,#430f41 8%,#38103d 16%,#2a1036 24%,#1e0e2d 32%,#120c22 40%,#0b0816 48%,#05040b 56%,#020104 64%,#000 75%);
   animation:hue 6s linear infinite;pointer-events:none}
 #w{position:relative;margin:0 0 6px;font:800 clamp(40px,13vw,76px)/1.05 system-ui,-apple-system,'Segoe UI',sans-serif;
   letter-spacing:-.02em;color:#fff;white-space:nowrap;
@@ -53,7 +53,7 @@ function put(k,v){try{ls.setItem&&ls.setItem(k,v)}catch(e){}}
 var m=document.cookie.match(/(?:^|; )pl_id=([\w-]+)/);
 var id=get('pl_id')||(m&&m[1]);
 if(!id){id='';var a='abcdefghijklmnopqrstuvwxyz0123456789';for(var i=0;i<24;i++)id+=a[Math.random()*36|0]}
-put('pl_id',id);var nid=document.getElementById('n');nid.textContent=id;document.cookie='pl_id='+id+';max-age=31536000;path=/;samesite=lax';
+put('pl_id',id);var nid=document.getElementById('n');nid.textContent=id.slice(0,8);document.cookie='pl_id='+id+';max-age=31536000;path=/;samesite=lax';
 var ws,tries=0,blackT,lockS,last=0,syncT,nsync=0,gone;
 // Sync: frames carry "show at server ms" (uint32). off = server clock - our clock, from
 // NTP-style samples; keep the lowest-round-trip of the last 8. q = frames waiting for their time.

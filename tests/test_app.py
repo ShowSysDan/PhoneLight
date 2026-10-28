@@ -86,7 +86,7 @@ def receive_color(ws, want, timeout=3):
 def test_pages(server):
     status, body = get(server, '/')
     assert status == 200 and b'/ws' in body and len(body) < 10000
-    assert b'<div id="n"></div>' in body and b"nid.textContent=id" in body     # client id, bottom right
+    assert b'<div id="n"></div>' in body and b"nid.textContent=id.slice(0,8)" in body   # short client id, bottom right
     for path in ('/admin', '/admin/sacn', '/admin/clients', '/admin/settings', '/static/keepawake.mp4'):
         assert get(server, path)[0] == 200
 
@@ -219,8 +219,8 @@ def test_kick_and_block(server):
     ws = join('block-test-0001')
     try:
         assert until(ws, 'f')
-        status, body = post(server, '/admin/api/blocks', {'kind': 'client', 'value': 'block-test-0001', 'note': 't'})
-        assert status == 200 and body['kicked'] == 1
+        status, body = post(server, '/admin/api/blocks', {'kind': 'client', 'value': 'block-te', 'note': 't'})
+        assert status == 200 and body['kicked'] == 1 and body['value'] == 'block-test-0001'   # short id as on the phone
         assert until(ws, 'x')
     finally:
         shut(ws)
@@ -230,6 +230,7 @@ def test_kick_and_block(server):
     finally:
         shut(ws)
     assert post(server, '/admin/api/blocks', {'kind': 'ip', 'value': 'not-an-ip'})[0] == 400
+    assert post(server, '/admin/api/blocks', {'kind': 'client', 'value': 'nobody99'})[0] == 400
     rows = json.loads(get(server, '/admin/api/blocks')[1])['rows']
     assert rows[0]['value'] == 'block-test-0001' and rows[0]['refused'] == 1
     assert post(server, '/admin/api/blocks/remove', {'kind': 'client', 'value': 'block-test-0001'})[0] == 200

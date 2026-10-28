@@ -29,3 +29,21 @@ def test_block_rejects_bad_values(fresh):
     for kind, value in (('client', 'short'), ('client', 'has space here'), ('ip', 'nope'), ('mac', 'x')):
         with pytest.raises(ValueError):
             blocks.add(kind, value)
+
+
+def test_short_client_id_resolves_to_the_full_one(fresh):
+    from server import db
+    stamp = db.now()
+    db.run_batch([('INSERT INTO clients (id, first_seen, last_seen) VALUES (?, ?, ?)', (i, stamp, stamp))
+                  for i in ('abcd1234zzzzzzzzzzzzzzzz', 'abcd9999yyyyyyyyyyyyyyyy', 'a_c%1234xxxxxxxxxxxxxxxx')])
+    assert blocks.resolve_client('abcd1234') == 'abcd1234zzzzzzzzzzzzzzzz'          # what the phone shows
+    assert blocks.resolve_client('livelive', {'livelive0000000000000000'}) == 'livelive0000000000000000'
+    assert blocks.resolve_client('a_c%1234') == 'a_c%1234xxxxxxxxxxxxxxxx'          # _ and % are not wildcards
+    with pytest.raises(ValueError, match='more than one'):
+        blocks.resolve_client('abcd')
+    with pytest.raises(ValueError, match='no connected or logged'):
+        blocks.resolve_client('nobody12')
+    with pytest.raises(ValueError, match='at least 4'):
+        blocks.resolve_client('ab')
+    with pytest.raises(ValueError, match='no connected or logged'):
+        blocks.resolve_client('a_c_')                                               # _ is literal
