@@ -6,6 +6,13 @@
 # server (e.g. 321T's dpc.321.theater) keep their own site blocks untouched.
 
 @@SITE@@ {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
 	# The admin is never public: use it on the building network
 	# (http://<glow server>:5420/admin).
 	@admin path /admin /admin/* /ws/admin
@@ -15,7 +22,8 @@
 
 	# Everything else (the guest page and its WebSocket) goes to the glow server.
 	# Caddy passes WebSockets through and sets X-Forwarded-For / -Proto (glow
-	# reads them with TRUST_PROXY=1 in its .env).
+	# believes them only from this server's address: TRUST_PROXY in its .env,
+	# and refuses the admin to any request that carries them).
 	handle {
 		reverse_proxy @@UPSTREAM@@@@STREAM@@
 	}

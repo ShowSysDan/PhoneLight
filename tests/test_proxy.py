@@ -69,3 +69,33 @@ def test_legacy_trust_proxy_one_still_protects_the_admin(client):
     c = client('1', '10.201.2.0/24')
     assert status(c, LAN) == 200
     assert status(c, LAN, headers={'X-Forwarded-For': '10.201.2.5'}) == 403
+
+
+def test_admin_refuses_forwarded_requests_even_without_trust_proxy(client):
+    c = client('')                                                             # TRUST_PROXY forgotten
+    assert status(c, GATEWAY, headers={'X-Forwarded-For': '8.8.8.8'}) == 403  # Caddy always adds it
+    assert status(c, GATEWAY, headers={'Forwarded': 'for=8.8.8.8'}) == 403
+    assert status(c, GATEWAY, '/') == 200
+
+
+def test_admin_refuses_other_sites_and_rebound_names(client, monkeypatch):
+    c = client('')
+    assert status(c, LAN, headers={'Origin': 'http://evil.example'}) == 403             # cross-site
+    r = c.post('/admin/api/clients/clear', headers={'Origin': 'http://evil.example'},
+               environ_base={'REMOTE_ADDR': LAN})
+    assert r.status_code == 403
+    assert status(c, LAN, headers={'Host': 'evil.example:5420'}) == 403                 # DNS rebinding
+    assert status(c, LAN, headers={'Host': '10.201.2.102:5420',
+                                   'Origin': 'http://10.201.2.102:5420'}) == 200        # the real thing
+    assert status(c, LAN, headers={'Host': '[::1]:5420'}) == 200
+    monkeypatch.setenv('ADMIN_HOSTS', 'glow-server.local')
+    assert status(c, LAN, headers={'Host': 'glow-server.local:5420'}) == 200
+
+
+def test_admin_headers_and_public_healthz(client):
+    c = client(GATEWAY)
+    r = c.get('/admin', environ_base={'REMOTE_ADDR': LAN})
+    assert r.headers['X-Frame-Options'] == 'DENY' and 'frame-ancestors' in r.headers['Content-Security-Policy']
+    assert r.headers['X-Content-Type-Options'] == 'nosniff'
+    assert 'version' in c.get('/healthz', environ_base={'REMOTE_ADDR': LAN}).get_json()
+    assert c.get('/healthz', environ_base={'REMOTE_ADDR': GATEWAY}).get_json() == {'ok': True}

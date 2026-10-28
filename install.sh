@@ -94,6 +94,16 @@ LimitNOFILE=16384
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=${APP_NAME}
+# Hardening: the guest page faces the internet through the gateway. The app
+# writes only inside its own directory (venv, data/), which stays writable.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+UMask=0027
 
 [Install]
 WantedBy=multi-user.target

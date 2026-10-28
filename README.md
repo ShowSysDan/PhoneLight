@@ -150,14 +150,16 @@ no service. Then start it in the foreground with `./start.sh` (Ctrl-C to stop).
 
 ### 4. Open the firewall (if one is on)
 
-The guests need TCP 5420; the console needs UDP 5568.
+The guests need TCP 5420; the console needs UDP 5568. sACN has no password:
+anyone who can send it UDP 5568 can drive every phone, so open it to the
+console only (and set `SACN_ALLOW`, step 6):
 
 ```bash
 sudo ufw allow 5420/tcp
 ```
 
 ```bash
-sudo ufw allow 5568/udp
+sudo ufw allow from <console-ip> to any port 5568 proto udp
 ```
 
 ### 5. Check it
@@ -170,14 +172,18 @@ systemctl status phonelight
 curl http://localhost:5420/healthz
 ```
 
-Then open `http://<server-ip>:5420/admin` in a browser.
+Then open `http://<server-ip>:5420/admin` in a browser. Open it by the
+server's IP address: the admin refuses other names (a web page could otherwise
+point one at it, "DNS rebinding") unless they are listed in `ADMIN_HOSTS`. It
+also refuses requests sent by other sites (their `Origin`) and anything that
+came through a proxy (`X-Forwarded-For`), and can't be framed.
 
-### 6. Lock down the admin (recommended)
+### 6. Lock down the admin and sACN (recommended)
 
 There is no admin sign-in yet, so anyone who can reach the server could open
-`/admin`. Limit it to your control network: edit `~/PhoneLight/.env`, set
-for example `ADMIN_ALLOW=192.168.10.0/24` (IPs and networks, comma-separated),
-then:
+`/admin`. Limit it to your control network, and sACN to the console: edit
+`~/PhoneLight/.env`, set for example `ADMIN_ALLOW=192.168.10.0/24` and
+`SACN_ALLOW=192.168.10.20` (IPs and networks, comma-separated), then:
 
 ```bash
 sudo systemctl restart phonelight
@@ -402,10 +408,14 @@ editing: `sudo systemctl restart phonelight`.
 |---|---|---|
 | `APP_PORT` | 5420 | Guest + admin HTTP port |
 | `ADMIN_ALLOW` | (anyone) | IPs / networks allowed to open `/admin` |
+| `ADMIN_HOSTS` | (none) | Host names the admin answers to besides IP addresses and `localhost` (e.g. `glow-server.local`) |
 | `SACN_BIND` | 0.0.0.0 | Listen on one interface's IP only |
+| `SACN_ALLOW` | (anyone) | IPs / networks sACN is accepted from (the console); others are dropped and counted |
 | `SACN_PORT` | 5568 | sACN UDP port |
 | `DB_PATH` | data/phonelight.db | SQLite file (relative = inside the app directory) |
 | `MAX_CONNECTIONS` | 4000 | Open sockets the server accepts |
+| `MAX_PER_IP` | 0 (off) | Phone sockets one address may hold; stops one machine taking every slot. Mind NAT: a venue Wi-Fi shows as one address, so list it in `MAX_PER_IP_EXEMPT` |
+| `MAX_PER_IP_EXEMPT` | (none) | IPs / networks `MAX_PER_IP` skips |
 | `TRUST_PROXY` | off | Behind the gateway: the gateway's address as this server sees it (e.g. `10.201.4.9`). Only its forwarded headers are believed, and requests through it never get the admin (see [the gateway](#public-access-the-gateway-https-glowlighting)) |
 | `ACCESS_LOG` | off | 1 = log every HTTP request |
 
@@ -426,7 +436,15 @@ a tested patch for their `gateway/install.sh`).
 On the glow server, set `TRUST_PROXY` to the gateway's address (the installer
 prints it, e.g. `TRUST_PROXY=10.201.4.9`) and `ADMIN_ALLOW` to the building
 network. Then guests' real IPs are logged, nobody can fake one, and the admin
-can't be reached through the gateway even if the VPS were compromised.
+can't be reached through the gateway even if the VPS were compromised. (Even
+with `TRUST_PROXY` unset, the admin refuses any request carrying
+`X-Forwarded-For`, which the gateway always adds.) Through the gateway
+`/healthz` says only `{"ok": true}`, not the version or the audience size.
+
+The URL is public, so consider `MAX_PER_IP` (e.g. 20) so one machine can't
+open every socket the server accepts. Through the gateway the address is the
+guest's own public one; a venue Wi-Fi's shared address goes in
+`MAX_PER_IP_EXEMPT`.
 
 ## Updating, logs, backups, uninstall
 

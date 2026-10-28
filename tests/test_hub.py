@@ -234,3 +234,26 @@ def test_kick_sends_bye_then_the_sender_ends():
     out = []
     assert h.serve(a, out.append, out.append) == 'blocked by admin'
     assert out == ['x'] and b.bye is None and b.alive
+
+
+def test_max_per_ip_caps_one_address_and_frees_on_leave():
+    h = Hub(2)
+    h.max_per_ip = 2
+    a, b, c = (Guest(f's{i}', f'client{i:04d}', '203.0.113.7', {}) for i in range(3))
+    assert h.join(a) is not None and h.join(b) is not None
+    assert h.join(c) is None and h.refused_full == 1 and len(h.guests) == 2
+    assert h.join(Guest('s9', 'client0009', '203.0.113.8', {})) is not None     # other addresses unaffected
+    h.leave(a)
+    h.leave(a)                                                                # twice: counted once
+    assert h.per_ip['203.0.113.7'] == 1 and h.join(c) is not None
+    for g in (b, c):
+        h.leave(g)
+    assert '203.0.113.7' not in h.per_ip                                     # nothing grows with uptime
+
+
+def test_max_per_ip_exempt_network():
+    from server import proxy
+    h = Hub(1)
+    h.max_per_ip, h.per_ip_exempt = 1, proxy.networks('198.51.100.0/24')
+    for i in range(3):
+        assert h.join(Guest(f's{i}', f'client{i:04d}', '198.51.100.20', {})) is not None
