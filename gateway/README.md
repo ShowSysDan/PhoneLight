@@ -81,13 +81,19 @@ it too, see [docs/321theater/SHARED_CADDY.md](../docs/321theater/SHARED_CADDY.md
    Options: `--site <name>` (default `glow.lighting`), `--no-www` (no
    `www.` redirect).
 
-3. On the **glow server** (not the VPS), have it trust the gateway's
-   forwarded addresses so the Clients page logs guests' real IPs. Add this line
-   to `~/PhoneLight/.env`:
+3. On the **glow server** (not the VPS), tell it the gateway's address, so it
+   believes the guests' real IPs only from the gateway and never serves the
+   admin through it. Limit the admin to the building network too. The
+   installer prints the exact `TRUST_PROXY` value (cyclorama's tunnel address).
+   Add to `~/PhoneLight/.env`:
 
    ```
-   TRUST_PROXY=1
+   TRUST_PROXY=10.201.4.9
+   ADMIN_ALLOW=10.201.2.0/24
    ```
+
+   (Use your building network for `ADMIN_ALLOW`; include every network the
+   crew opens the admin from.)
 
    Then restart it:
 

@@ -17,11 +17,10 @@ import uuid
 
 from flask import Flask, abort, jsonify, render_template, request
 from flask_sock import ConnectionClosed, Sock
-from werkzeug.middleware.proxy_fix import ProxyFix
-
 from . import config, migrate, settings, tracker
 from .engine import Engine
 from .hub import Guest, Hub
+from .proxy import ProxyHeaders
 from .sacn import Receiver
 
 log = logging.getLogger('phonelight')
@@ -87,8 +86,7 @@ def create_app(start=True):
 
     app = Flask(__name__)
     app.config['SOCK_SERVER_OPTIONS'] = {'max_message_size': 4096}
-    if config.get('TRUST_PROXY') == '1':
-        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    app.wsgi_app = ProxyHeaders(app.wsgi_app, config.get('TRUST_PROXY', ''))
     sock = Sock(app)
     rt = Runtime()
     app.extensions['phonelight'] = rt
@@ -100,8 +98,13 @@ def create_app(start=True):
 
     @app.before_request
     def _guard_admin():
-        if request.path.startswith(('/admin', '/ws/admin')) and not _admin_allowed(request.remote_addr):
-            abort(403)
+        """The admin is building-network only: never through the gateway (even with forged
+        headers), and ADMIN_ALLOW is checked against the real peer (proxy.py)."""
+        if request.path.startswith(('/admin', '/ws/admin')):
+            if request.environ.get('phonelight.via_proxy'):
+                abort(403)
+            if not _admin_allowed(request.environ.get('phonelight.peer', request.remote_addr)):
+                abort(403)
 
     # ── guest ──────────────────────────────────────────────────────────────
     with app.app_context():
