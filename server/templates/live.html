@@ -8,6 +8,8 @@
   <div class="card stat"><div class="k">sACN in</div><div class="v" id="s-sacn">–</div><div class="s" id="s-sacn-sub"></div></div>
 </div>
 
+<div class="warnbox" id="unlit" hidden></div>
+
 <div class="section-header">
   <div class="section-title">Output</div>
   <div class="row">
@@ -76,6 +78,14 @@
     const s = d.settings;
     setText($('fx-sub'), `${s.fixtures} × ${s.bit_depth}-bit RGB from address ${s.start_address} · master ${s.master}%`);
     document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === d.engine.mode));
+    // phones in a group whose channels have stayed at 0 since sACN came: almost always a patch problem
+    const per = s.bit_depth === 16 ? 6 : 3;
+    const unlit = (d.engine.unlit || []).filter((f) => counts[f - 1] > 0);
+    $('unlit').hidden = !unlit.length || d.engine.mode !== 'sacn';
+    setHTML($('unlit'), unlit.length ? '<b>Phones with nothing to show.</b> ' + unlit.map((f) => {
+      const a = s.start_address + (f - 1) * per;
+      return `Fixture ${f} has ${counts[f - 1]} phone${counts[f - 1] === 1 ? '' : 's'}, but its channels ${a}–${a + per - 1} have stayed at 0 since sACN started.`;
+    }).join(' ') + ' Is it patched and in the cue on the console? (Fewer fixtures in Settings puts every phone in a driven group.)' : '');
   });
   // latency + connects are in the guests view (1 Hz)
   PL.feed(['guests'], (d) => {

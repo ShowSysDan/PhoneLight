@@ -27,6 +27,8 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none
 @keyframes breathe{from{opacity:.86}to{opacity:1}}
 @media (prefers-reduced-motion:reduce){ #go:before,#w,#go button{animation:none} }
 #go small{max-width:340px;color:#999;font-size:12px}
+#i{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);padding:10px 14px;border-radius:10px;background:rgba(0,0,0,.78);
+  color:#fff;font:12px/1.6 ui-monospace,Menlo,monospace;white-space:pre;text-align:left;pointer-events:none}
 #s{position:fixed;left:0;right:0;bottom:8px;text-align:center;color:#fff;opacity:.35;font:11px system-ui,sans-serif;pointer-events:none}
 </style>
 </head><body>
@@ -39,6 +41,7 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none
 screen size, language, time zone) and how long you are connected. Nothing personal is asked for or stored.</small>
 </div>
 <div id="s"></div>
+<div id="i" hidden></div>
 <script>
 (function(){
 var c=document.getElementById('c'),go=document.getElementById('go'),st=document.getElementById('s');
@@ -61,7 +64,9 @@ function synced(d){
   samples.push([(c3-c0)-(t2-t1),((t1-c0)+(t2-c3))/2]);if(samples.length>8)samples.shift();
   var b=samples[0];for(var i=1;i<samples.length;i++)if(samples[i][0]<b[0])b=samples[i];off=b[1];
 }
+var nframes=0,fx='';
 function frame(b){
+  nframes++;
   var col='rgb('+b[0]+','+b[1]+','+b[2]+')';
   if(off===null||b.length<7){q=[];return paint(col)}
   var at=((b[3]<<24|b[4]<<16|b[5]<<8|b[6])>>>0),wait=(at-(Math.round(now()+off)>>>0))|0;
@@ -84,7 +89,7 @@ function connect(){
   ws.onmessage=function(e){
     var d=e.data;last=Date.now();
     if(typeof d!='string')return frame(new Uint8Array(d));
-    if(d[0]=='p')ws.send(d);else if(d[0]=='s')synced(d);else if(d[0]=='f')put('pl_fx',d.slice(1));
+    if(d[0]=='p')ws.send(d);else if(d[0]=='s')synced(d);else if(d[0]=='f'){fx=d.slice(1);put('pl_fx',fx)}
   };
   ws.onclose=function(){
     ws=null;clearTimeout(syncT);clearTimeout(blackT);blackT=setTimeout(black,3000);st.textContent='reconnecting…';
@@ -104,6 +109,22 @@ function lock(){
   if(document.visibilityState!='visible')return;
   if(navigator.wakeLock)navigator.wakeLock.request('screen').then(function(l){lockS=l}).catch(video);else video();
 }
+// Long-press anywhere (0.7 s): a status readout for crew, hidden again after 6 s.
+var info=document.getElementById('i'),pressT,infoT,hideT,fr0=0;
+function status(){
+  var b=null;for(var k=0;k<samples.length;k++)if(!b||samples[k][0]<b[0])b=samples[k];
+  var up=ws&&ws.readyState==1,fps=nframes-fr0;fr0=nframes;
+  info.textContent='glow.lighting\nfixture '+(fx||'?')+' \u00b7 '+(up?'connected':'reconnecting')+
+    '\nround trip '+(b?Math.round(b[0])+' ms':'\u2013')+' \u00b7 sync '+(off===null?'not yet':'\u00b1'+Math.max(1,Math.round(b[0]/2))+' ms')+
+    '\n'+fps*2+' frames/s \u00b7 '+(shown||'#000')+'\nid '+id.slice(0,8);
+}
+function showInfo(){
+  clearInterval(infoT);clearTimeout(hideT);fr0=nframes;status();info.hidden=false;infoT=setInterval(status,500);
+  hideT=setTimeout(function(){info.hidden=true;clearInterval(infoT)},6000);
+}
+c.addEventListener('pointerdown',function(){clearTimeout(pressT);pressT=setTimeout(showInfo,700)});
+['pointerup','pointercancel','pointerleave'].forEach(function(t){c.addEventListener(t,function(){clearTimeout(pressT)})});
+c.addEventListener('contextmenu',function(e){e.preventDefault()});
 document.getElementById('b').onclick=function(){
   var d=document.documentElement,r=d.requestFullscreen||d.webkitRequestFullscreen;
   if(r)try{var p=r.call(d);p&&p.catch&&p.catch(function(){})}catch(e){}
