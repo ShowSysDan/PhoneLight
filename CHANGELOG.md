@@ -5,6 +5,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/). Every change
 ships as its own version: the top section always matches `VERSION`.
 
+## [0.8.3] - 2026-10-28
+
+### Fixed
+- Start-screen glow looking blocky (banded) on phones. The halo was a
+  mostly transparent gradient (28% at its brightest) under the hue filter:
+  GPUs keep such a layer premultiplied in 8 bits, leaving only a dozen or so
+  levels in some channels, and the hue filter spreads those steps into every
+  colour. The halo is now opaque (the same colours mixed onto the black
+  page) with a smooth cosine falloff in 10 stops instead of 3 straight-line
+  segments, so there is no ring where the slope changes. Same look, colours
+  and size.
+
+Redeploy: `cd ~/PhoneLight && git pull && sudo systemctl restart phonelight`.
+
 ## [0.8.2] - 2026-10-28
 
 ### Changed

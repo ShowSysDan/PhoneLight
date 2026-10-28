@@ -1,6 +1,6 @@
 # glow.lighting
 
-Version **0.8.2** · see [CHANGELOG.md](CHANGELOG.md)
+Version **0.8.3** · see [CHANGELOG.md](CHANGELOG.md)
 
 > **glow.lighting** is the product name: it is what guests and the admin
 > see. The code name **PhoneLight** stays for the repo, the folder
