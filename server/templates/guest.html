@@ -25,7 +25,7 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none
   padding:16px 40px;box-shadow:0 0 18px #ff2bd6,0 0 42px #7a5cff;animation:hue 6s linear infinite}
 @keyframes hue{0%{filter:hue-rotate(0deg)}33%{filter:hue-rotate(120deg)}67%{filter:hue-rotate(240deg)}to{filter:hue-rotate(360deg)}}
 @keyframes breathe{from{opacity:.86}to{opacity:1}}
-@media (prefers-reduced-motion:reduce){ #go:before,#w,#go button{animation:none} }
+@media (prefers-reduced-motion:reduce){ #go:before,#w,#go button{animation:hue 12s linear infinite} }
 #go small{max-width:340px;color:#999;font-size:12px}
 #i{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);padding:10px 14px;border-radius:10px;background:rgba(0,0,0,.78);
   color:#fff;font:12px/1.6 ui-monospace,Menlo,monospace;white-space:pre;text-align:left;pointer-events:none}
