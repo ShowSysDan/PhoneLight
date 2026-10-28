@@ -5,6 +5,48 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/). Every change
 ships as its own version: the top section always matches `VERSION`.
 
+## [0.9.0] - 2026-10-28
+
+Security hardening from a full audit of the app and the public gateway.
+
+### Added
+- `SACN_ALLOW` (.env): sACN accepted only from these IPs / networks (the
+  console). sACN has no password, so before this anyone who could send UDP
+  5568 could drive every phone. Refused packets are counted (`refused` in the
+  admin feed). At most 64 sources are held at once, so spoofed CIDs can't
+  grow the merger.
+- `MAX_PER_IP` / `MAX_PER_IP_EXEMPT` (.env, off by default): phone sockets
+  one address may hold, so one machine can't open every socket the server
+  accepts and lock the audience out. Exempt a venue Wi-Fi's shared address.
+- `ADMIN_HOSTS` (.env): extra names the admin answers to.
+
+### Changed
+- The admin (no sign-in yet) now also refuses what a web page in a crew
+  member's browser could send it: a request whose `Origin` is another site
+  (cross-site POSTs such as Clear log, and cross-site WebSocket hijacking of
+  `/ws/admin`), and a `Host` that is not an IP address, `localhost` or an
+  `ADMIN_HOSTS` name (DNS rebinding). Open the admin by the server's IP.
+- The admin refuses any request carrying `X-Forwarded-For` / `Forwarded` /
+  `X-Real-IP`, so it stays off the gateway even when `TRUST_PROXY` was never
+  set (Caddy always adds the header).
+- Admin pages can't be framed (`X-Frame-Options: DENY`, `frame-ancestors
+  'none'`) and aren't cached; every response is `nosniff` with
+  `Referrer-Policy: same-origin`.
+- `/healthz` through the gateway answers only `{"ok": true}` (no version or
+  audience size).
+- systemd unit (install.sh): `NoNewPrivileges`, `PrivateTmp`,
+  `ProtectSystem=full`, kernel/cgroup protection, `UMask=0027`. Re-run
+  `sudo ./install.sh` to apply.
+- Gateway site: HSTS, `nosniff`, `Referrer-Policy: no-referrer`, no `Server`
+  header; stale `TRUST_PROXY=1` comment corrected. Re-run the gateway
+  installer to apply.
+- README: open UDP 5568 to the console only.
+
+Redeploy: `cd ~/PhoneLight && git pull && sudo ./install.sh` (the unit
+changed), or `git pull && sudo systemctl restart phonelight` for the app
+alone. Gateway VPS: `cd /opt/glow-gateway-src && sudo git pull && sudo bash
+gateway/install.sh`.
+
 ## [0.8.4] - 2026-10-28
 
 ### Changed

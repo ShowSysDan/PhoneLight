@@ -52,6 +52,8 @@ import re
 import threading
 import time
 
+from . import proxy
+
 PING_INTERVAL = 5.0
 PING_TIMEOUT = 20.0          # no pong this long -> the socket is dead, close it
 IDLE_WAKE = 1.0              # a sender with nothing to do still looks this often (pings)
@@ -149,12 +151,26 @@ class Hub:
         self.frames = [self.black] * fixtures    # pre-built colour frame per fixture
         self.total_connects = 0
         self.delay_ms = 0                         # Sync delay (settings), see module doc
+        self.max_per_ip = 0                       # MAX_PER_IP (.env); 0 = no limit
+        self.per_ip_exempt = ()                   # networks the limit skips (a venue's shared address)
+        self.per_ip = {}                          # ip -> connected guests (only while > 0)
+        self.refused_full = 0                     # connects refused by MAX_PER_IP
 
     # ── membership ─────────────────────────────────────────────────────────
+    def _limited(self, ip):
+        if not self.max_per_ip or self.per_ip.get(ip, 0) < self.max_per_ip:
+            return False
+        return not proxy.contains(self.per_ip_exempt, ip)
+
     def join(self, guest, preferred=None):
         """Add to the emptiest fixture; keep `preferred` (its last one) when
-        that is one of the emptiest, so a reconnect does not change colour."""
+        that is one of the emptiest, so a reconnect does not change colour.
+        None (not added) when its address already holds MAX_PER_IP sockets."""
         with self.lock:
+            if self._limited(guest.ip):
+                self.refused_full += 1
+                return None
+            self.per_ip[guest.ip] = self.per_ip.get(guest.ip, 0) + 1
             counts = [len(m) for m in self.members]
             low = min(counts)
             emptiest = [i for i, c in enumerate(counts) if c == low]
@@ -169,7 +185,12 @@ class Hub:
     def leave(self, guest):
         with self.lock:
             guest.alive = False
-            self.guests.pop(guest.sid, None)
+            if self.guests.pop(guest.sid, None) is not None:
+                n = self.per_ip.get(guest.ip, 0) - 1
+                if n > 0:
+                    self.per_ip[guest.ip] = n
+                else:
+                    self.per_ip.pop(guest.ip, None)
             for m in self.members:
                 m.discard(guest)
         guest.wake.set()
@@ -342,6 +363,7 @@ class Hub:
         lats = [g.latency_avg() for g in guests if g.lat_n]
         return dict(
             connected=len(guests), total_connects=self.total_connects, counts=self.counts(),
+            refused_full=self.refused_full,
             latency_avg=round(sum(lats) / len(lats), 1) if lats else None,
             guests=[dict(sid=g.sid, client_id=g.client_id, ip=g.ip, fixture=g.fixture + 1,
                          device=g.info.get('device'), os=g.info.get('os'), browser=g.info.get('browser'),

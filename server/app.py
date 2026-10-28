@@ -14,10 +14,11 @@ import logging
 import threading
 import time
 import uuid
+from urllib.parse import urlsplit
 
 from flask import Flask, abort, jsonify, render_template, request
 from flask_sock import ConnectionClosed, Sock
-from . import blocks, config, migrate, settings, tracker
+from . import blocks, config, migrate, proxy, settings, tracker
 from .engine import Engine
 from .hub import Guest, Hub
 from .proxy import ProxyHeaders
@@ -36,10 +37,13 @@ class Runtime:
         v = settings.current()
         self.hub = Hub(v['fixtures'], v['cells'], v['cell_columns'])
         self.hub.delay_ms = v['sync_delay']
+        self.hub.max_per_ip = max(0, config.get_int('MAX_PER_IP', 0))
+        self.hub.per_ip_exempt = proxy.networks(config.get('MAX_PER_IP_EXEMPT', ''))
         self.engine = Engine(self.hub.publish)
         self.receiver = Receiver(lambda: settings.current()['universe'], self.engine.on_frame,
                                  bind=config.get('SACN_BIND', '0.0.0.0'),
-                                 port=config.get_int('SACN_PORT', 5568))
+                                 port=config.get_int('SACN_PORT', 5568),
+                                 allow=_sacn_allow())
         self.writer = tracker.Writer(lambda: list(self.hub.guests.values()))
         settings.on_change(self._settings_changed)
 
@@ -61,6 +65,47 @@ class Runtime:
         self.engine.start()
         self.hub.start()
         self.writer.start()
+
+
+def _sacn_allow():
+    """SACN_ALLOW: IPs / networks the console sends from; unset = every sender."""
+    text = config.get('SACN_ALLOW', '')
+    if not text:
+        return None
+    nets = proxy.networks(text)
+    log.info('sACN accepted only from %s', ', '.join(map(str, nets)) or 'nobody (SACN_ALLOW has no valid entry)')
+    return nets
+
+
+_FORWARDED = ('HTTP_X_FORWARDED_FOR', 'HTTP_FORWARDED', 'HTTP_X_REAL_IP', 'HTTP_X_FORWARDED_HOST')
+
+
+def _admin_host_ok(host):
+    """The admin answers only to an IP address, localhost or a name in ADMIN_HOSTS:
+    a DNS-rebinding page (evil.example resolving to this server) can't use the
+    crew's browser to reach it."""
+    name = (host or '').strip().lower()
+    if name.startswith('['):
+        name = name[1:name.find(']')] if ']' in name else name
+    elif name.count(':') == 1:
+        name = name.split(':', 1)[0]
+    if not name:
+        return False
+    try:
+        ipaddress.ip_address(name)
+        return True
+    except ValueError:
+        pass
+    allowed = {h.strip().lower() for h in config.get('ADMIN_HOSTS', '').split(',') if h.strip()}
+    return name == 'localhost' or name in allowed
+
+
+def _same_origin(origin, host):
+    """A browser's Origin header names the page that sent the request."""
+    try:
+        return urlsplit(origin).netloc.lower() == (host or '').lower()
+    except ValueError:
+        return False
 
 
 def _admin_allowed(ip):
@@ -102,12 +147,32 @@ def create_app(start=True):
     @app.before_request
     def _guard_admin():
         """The admin is building-network only: never through the gateway (even with forged
-        headers), and ADMIN_ALLOW is checked against the real peer (proxy.py)."""
+        headers), and ADMIN_ALLOW is checked against the real peer (proxy.py). There is no
+        sign-in yet, so it also refuses what a web page in a crew member's browser could
+        send: another site's Origin (cross-site POSTs, WebSocket hijacking; browsers send
+        Origin on both) and a Host that is not this server's address (DNS rebinding)."""
         if request.path.startswith(('/admin', '/ws/admin')):
-            if request.environ.get('phonelight.via_proxy'):
+            env = request.environ
+            if env.get('phonelight.via_proxy') or any(env.get(h) for h in _FORWARDED):
+                abort(403)          # through a proxy, even when TRUST_PROXY is not set
+            if not _admin_allowed(env.get('phonelight.peer', request.remote_addr)):
                 abort(403)
-            if not _admin_allowed(request.environ.get('phonelight.peer', request.remote_addr)):
+            if not _admin_host_ok(request.host):
+                abort(403, description='Open the admin by the server\'s IP address, or add this name '
+                                       'to ADMIN_HOSTS in .env.')
+            origin = request.headers.get('Origin')
+            if origin and not _same_origin(origin, request.host):
                 abort(403)
+
+    @app.after_request
+    def _headers(resp):
+        resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        resp.headers.setdefault('Referrer-Policy', 'same-origin')
+        if request.path.startswith('/admin'):
+            resp.headers.setdefault('X-Frame-Options', 'DENY')
+            resp.headers.setdefault('Content-Security-Policy', "frame-ancestors 'none'")
+            resp.headers.setdefault('Cache-Control', 'no-store')
+        return resp
 
     # ── guest ──────────────────────────────────────────────────────────────
     with app.app_context():
@@ -119,6 +184,8 @@ def create_app(start=True):
 
     @app.get('/healthz')
     def healthz():
+        if request.environ.get('phonelight.via_proxy'):
+            return jsonify(ok=True)             # the internet doesn't need the version or the audience size
         return jsonify(ok=True, version=version, guests=len(rt.hub.guests))
 
     @sock.route('/ws')
@@ -144,7 +211,9 @@ def create_app(start=True):
         guest = Guest(uuid.uuid4().hex, client_id, request.remote_addr, info,
                       raw=raw if raw is not None and raw.gettimeout() == 0.0 else None, closer=ws.sock.close)
         preferred = hello.get('fixture')
-        rt.hub.join(guest, preferred - 1 if isinstance(preferred, int) else None)
+        if rt.hub.join(guest, preferred - 1 if isinstance(preferred, int) else None) is None:
+            ws.close()                  # MAX_PER_IP: this address holds enough sockets already
+            return
         tracker.session_start(guest)
         threading.Thread(target=_guest_reader, args=(ws, guest), daemon=True).start()
         reason = 'closed by guest'
@@ -304,7 +373,7 @@ def create_app(start=True):
                 snap = rt.receiver.snapshot()
                 out = dict(engine=rt.engine.snapshot(), counts=rt.hub.counts(), connected=len(rt.hub.guests),
                            settings=settings.current(),
-                           sacn={k: snap[k] for k in ('sources', 'packets', 'ignored', 'error', 'listen',
+                           sacn={k: snap[k] for k in ('sources', 'packets', 'ignored', 'refused', 'error', 'listen',
                                                        'other_universes', 'stale', 'timing')})
                 if 'levels' in views:
                     out['levels'] = snap['levels']

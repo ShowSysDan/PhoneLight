@@ -131,3 +131,20 @@ def test_reader_drains_a_real_socket():
     assert got[-1] == 200 and len(got) < 200 and r.stale > 0           # skipped to the newest
     r._roll(time.monotonic())
     assert r.timing['wait_max'] is not None and r.timing['wait_max'] < 3000   # Linux kernel timestamps
+
+
+def test_sacn_allow_drops_other_senders():
+    from server import proxy
+    frames = []
+    r = sacn.Receiver(lambda: 1, lambda lv, live: frames.append(lv), allow=proxy.networks('10.0.0.5, 10.1.0.0/24'))
+    r.handle(pkt(cid=CID_A, data=levels(c1=200)), '192.168.1.66')
+    assert r.refused == 1 and not frames and not r.merger.sources
+    r.handle(pkt(cid=CID_A, seq=1, data=levels(c1=100)), '10.1.0.9')
+    assert frames[-1][0] == 100 and r.refused == 1
+
+
+def test_source_count_is_capped():
+    r, _ = receiver()
+    for i in range(sacn.MAX_SOURCES + 10):
+        r.handle(pkt(cid=i.to_bytes(16, 'big')), '10.0.0.1')
+    assert len(r.merger.sources) == sacn.MAX_SOURCES

@@ -10,6 +10,11 @@ only those at the highest priority count, and those are merged HTP (highest
 value per slot wins). A source that sends Stream_Terminated leaves at once.
 Preview packets and non-zero start codes are ignored.
 
+sACN has no authentication: anyone who can send UDP to this port can drive
+the phones. SACN_ALLOW (.env, IPs / networks) limits it to the console(s);
+packets from anyone else are dropped before parsing and counted (`refused`).
+At most MAX_SOURCES sources are held at once, so spoofed CIDs can't grow it.
+
 Input is LATEST-WINS too: the reader takes everything waiting in the
 socket at once and acts only on the newest packet of each source, so if the
 app ever falls behind it skips stale levels instead of working through a
@@ -20,6 +25,7 @@ long the app took from reading them to handing the colours to the phones.
 `Receiver.on_frame(levels, live)` is called after every batch that changed
 the merged 512 levels (and when the last source drops).
 """
+import ipaddress
 import logging
 import select
 import socket
@@ -33,6 +39,7 @@ log = logging.getLogger('phonelight.sacn')
 PORT = 5568
 SOURCE_TIMEOUT = 2.5            # E1.31 network data loss
 DRAIN_MAX = 256                 # packets read per batch before yielding to the rest of the app
+MAX_SOURCES = 64                # sources held at once; more (spoofed CIDs, a flood) are refused
 # Kernel receive timestamps: Linux SO_TIMESTAMPNS (Python's socket module has no name for it;
 # 35 on every common Linux architecture). Elsewhere: no wait timing, everything else the same.
 _TS = getattr(socket, 'SO_TIMESTAMPNS', 35 if sys.platform.startswith('linux') else None)
@@ -41,6 +48,14 @@ _VECTOR_ROOT_DATA = 0x00000004
 _VECTOR_FRAMING_DATA = 0x00000002
 _OPT_PREVIEW = 0x80
 _OPT_TERMINATED = 0x40
+
+
+def _in_networks(nets, ip):
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return any(addr in n for n in nets)
 
 
 class Packet:
@@ -148,6 +163,8 @@ class Merger:
                     return True
                 return False
             if src is None:
+                if len(self.sources) >= MAX_SOURCES:
+                    return False
                 self.sources[pkt.cid] = src = Source(pkt, ip, now)
                 src.packets = 1
                 log.info('sACN source %s (%s) priority %d', pkt.name, ip, pkt.priority)
@@ -162,13 +179,16 @@ class Merger:
 
 
 class Receiver:
-    def __init__(self, get_universe, on_frame, bind='0.0.0.0', port=PORT):
+    def __init__(self, get_universe, on_frame, bind='0.0.0.0', port=PORT, allow=None):
         self.get_universe, self.on_frame = get_universe, on_frame
         self.bind, self.port = bind, port
+        self.allow = allow             # SACN_ALLOW networks, or None = every sender
+        self._allowed = {}             # ip -> bool (cache, cleared when it grows)
         self.merger = Merger()
         self.error = None
         self.packets = 0
         self.ignored = 0               # not E1.31 data / preview / other start code
+        self.refused = 0               # from an address not in SACN_ALLOW
         self.other_universes = {}      # universe -> {ip, last_seen, packets}
         self.stale = 0                 # older packets skipped because a newer one was waiting
         self.timing = dict(wait_avg=None, wait_max=None, proc_avg=None, proc_max=None, batch_max=0)
@@ -258,6 +278,9 @@ class Receiver:
                 acc[0] += 1
                 acc[1] += wait
                 acc[2] = max(acc[2], wait)
+            if self.allow is not None and not self._sender_allowed(ip):
+                self.refused += 1
+                continue
             pkt = parse(buf)
             if pkt is None:
                 self.ignored += 1
@@ -283,6 +306,14 @@ class Receiver:
         acc[6] = max(acc[6], len(batch))
         if now - self._acc_at >= 1.0:
             self._roll(now)
+
+    def _sender_allowed(self, ip):
+        ok = self._allowed.get(ip)
+        if ok is None:
+            if len(self._allowed) > 1024:
+                self._allowed.clear()
+            ok = self._allowed[ip] = _in_networks(self.allow, ip)
+        return ok
 
     def _roll(self, now):
         a = self._acc
@@ -320,6 +351,7 @@ class Receiver:
         if now - self._acc_at > 2:                  # no packets lately: don't show old timing
             self._roll(now)
         return dict(sources=sources, levels=list(levels), packets=self.packets, ignored=self.ignored,
+                    refused=self.refused,
                     stale=self.stale, timing=self.timing,
                     error=self.error, listen=f'{self.bind}:{self.port}',
                     other_universes=[dict(universe=u, ip=s['ip'], packets=s['packets'])
