@@ -1,0 +1,90 @@
+{% extends 'base.html' %}
+{% block title %}Clients · PhoneLight{% endblock %}
+{% block main %}
+<div class="stats">
+  <div class="card stat"><div class="k">Connected now</div><div class="v" id="s-now">–</div><div class="s" id="s-now-lat"></div></div>
+  <div class="card stat"><div class="k">Unique clients (logged)</div><div class="v" id="s-clients">–</div><div class="s" id="s-sessions"></div></div>
+  <div class="card stat"><div class="k">Total connected time</div><div class="v" id="s-time">–</div><div class="s" id="s-lat"></div></div>
+  <div class="card stat"><div class="k">Log writer</div><div class="v" id="s-queue">–</div><div class="s" id="s-dropped"></div></div>
+</div>
+
+<div class="section-header"><div class="section-title">Connected now</div><span class="dim small">newest first, up to 500</span></div>
+<div class="card table-wrap">
+  <table><thead><tr><th>Client</th><th>Fixture</th><th>IP</th><th>Device</th><th>OS</th><th>Browser</th><th>Connected</th><th>Latency</th><th>Avg</th></tr></thead>
+  <tbody id="live"></tbody></table>
+</div>
+
+<div class="section-header">
+  <div class="section-title">Client log</div>
+  <div class="row">
+    <input id="q" placeholder="Search id, IP, device…">
+    <button id="refresh">Refresh</button>
+    <button id="clear" class="danger" title="Delete every logged client and session (connected phones stay)">Clear log</button>
+  </div>
+</div>
+<div class="card table-wrap">
+  <table><thead><tr><th>Client</th><th>Last seen</th><th>First seen</th><th>Visits</th><th>Total time</th><th>Avg latency</th><th>Last IP</th>
+    <th>Device</th><th>OS</th><th>Browser</th><th>Screen</th><th>Lang / TZ</th></tr></thead>
+  <tbody id="log"></tbody></table>
+</div>
+<div class="dim small" style="margin-top:8px">Click a client for its sessions. Showing the 200 most recent.</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const { $, esc, num, setText, setHTML, duration, when, api } = PL;
+  const short = (id) => esc(String(id).slice(0, 8));
+  PL.feed(['guests'], (d) => {
+    if (!d.guests) return;
+    const g = d.guests;
+    setText($('s-now'), String(g.connected));
+    setText($('s-now-lat'), g.latency_avg == null ? '' : `avg ${num(g.latency_avg)} ms round trip`);
+    setHTML($('live'), g.guests.length ? g.guests.map((r) => `<tr><td class="mono" title="${esc(r.client_id)}">${short(r.client_id)}</td>` +
+      `<td>${r.fixture}</td><td class="mono">${esc(r.ip)}</td><td>${esc(r.device)}</td><td>${esc(r.os)}</td><td>${esc(r.browser)}</td>` +
+      `<td class="mono">${duration(r.seconds)}</td><td class="mono">${num(r.latency)} ms</td><td class="mono">${num(r.latency_avg)} ms</td></tr>`).join('')
+      : '<tr><td colspan="9" class="empty">No phones connected.</td></tr>');
+  });
+
+  let open = null;
+  async function load() {
+    const q = encodeURIComponent($('q').value.trim());
+    const d = await api(`/admin/api/clients?limit=200&q=${q}`);
+    const s = d.summary;
+    setText($('s-clients'), String(s.clients));
+    setText($('s-sessions'), `${s.sessions} sessions`);
+    setText($('s-time'), duration(s.seconds));
+    setText($('s-lat'), s.latency_avg == null ? '' : `avg latency ${num(s.latency_avg)} ms`);
+    setText($('s-queue'), `${d.queued} queued`);
+    setText($('s-dropped'), d.dropped ? `${d.dropped} rows dropped (database too slow)` : 'nothing dropped');
+    setHTML($('log'), d.rows.length ? d.rows.map((r) => `<tr class="click" data-id="${esc(r.id)}"><td class="mono" title="${esc(r.id)}">${short(r.id)}</td>` +
+      `<td>${when(r.last_seen)}</td><td>${when(r.first_seen)}</td><td class="mono">${r.visits}</td><td class="mono">${duration(r.total_seconds)}</td>` +
+      `<td class="mono">${num(r.latency_avg)} ms</td><td class="mono">${esc(r.last_ip)}</td><td>${esc(r.device)}</td><td>${esc(r.os)}</td>` +
+      `<td>${esc(r.browser)}</td><td class="mono">${esc(r.screen)}</td><td>${esc(r.language)} · ${esc(r.timezone)}</td></tr>`).join('')
+      : '<tr><td colspan="12" class="empty">Nothing logged yet.</td></tr>');
+    open = null;
+  }
+  $('log').onclick = async (e) => {
+    const tr = e.target.closest('tr.click');
+    if (!tr) return;
+    document.querySelectorAll('#log tr.sub').forEach((el) => el.remove());
+    if (open === tr.dataset.id) { open = null; return; }
+    open = tr.dataset.id;
+    const d = await api(`/admin/api/clients/${encodeURIComponent(open)}/sessions`);
+    const rows = d.rows.map((s) => `<tr class="sub"><td></td><td colspan="2">${when(s.connected_at)} → ${s.disconnected_at ? when(s.disconnected_at) : '<b>live</b>'}</td>` +
+      `<td>fx ${s.fixture ?? '–'}</td><td class="mono">${duration(s.seconds)}</td><td class="mono">${num(s.latency_avg)} ms</td>` +
+      `<td class="mono">${esc(s.ip)}</td><td colspan="5" class="dim">${s.latency_samples} pings · min ${num(s.latency_min)} / max ${num(s.latency_max)} ms` +
+      `${s.close_reason ? ' · ' + esc(s.close_reason) : ''}</td></tr>`).join('');
+    tr.insertAdjacentHTML('afterend', rows || '<tr class="sub"><td colspan="12" class="empty">No sessions.</td></tr>');
+  };
+  $('refresh').onclick = load;
+  $('q').onkeydown = (e) => { if (e.key === 'Enter') load(); };
+  $('clear').onclick = async () => {
+    if (!confirm('Delete every logged client and session? Connected phones are not affected.')) return;
+    await api('/admin/api/clients/clear', {});
+    load();
+  };
+  load();
+  setInterval(load, 15000);
+})();
+</script>
+{% endblock %}

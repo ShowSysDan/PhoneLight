@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block title %}Settings · PhoneLight{% endblock %}
+{% block main %}
+<div class="section-header">
+  <div class="section-title">Show settings</div>
+  <span class="dim small">Applied live, no restart. Changing the fixture count deals every phone out again.</span>
+</div>
+<form class="card" id="form">
+  <div class="form">
+    {% for key, d in defs.items() %}
+    <div class="field">
+      <label for="f-{{ key }}">{{ d.label }}</label>
+      {% if d.choices %}
+      <select id="f-{{ key }}" name="{{ key }}">
+        {% for c in d.choices %}<option value="{{ c }}" {{ 'selected' if values[key] == c }}>{{ c }}-bit</option>{% endfor %}
+      </select>
+      {% else %}
+      <input id="f-{{ key }}" name="{{ key }}" type="number" min="{{ d.min }}" max="{{ d.max }}"
+             step="{{ 'any' if d.type.__name__ == 'float' else 1 }}" value="{{ values[key] }}" required>
+      {% endif %}
+      <div class="help">{{ d.help }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="row" style="margin-top:16px">
+    <button class="primary" type="submit">Save</button>
+    <span class="msg" id="msg"></span>
+  </div>
+</form>
+<div class="dim small" style="margin-top:12px" id="footprint"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const { $, api } = PL;
+  const form = $('form');
+  function footprint() {
+    const f = +form.fixtures.value, per = +form.bit_depth.value === 16 ? 6 : 3, start = +form.start_address.value;
+    const last = start + f * per - 1;
+    $('footprint').textContent = `Fixtures use channels ${start}–${last} (${f} × ${per} ch)` + (last > 512 ? ' — past 512!' : '');
+  }
+  form.oninput = footprint;
+  footprint();
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const body = Object.fromEntries(new FormData(form));
+    try {
+      await api('/admin/api/settings', body);
+      $('msg').className = 'msg ok'; $('msg').textContent = 'Saved.';
+    } catch (err) {
+      $('msg').className = 'msg bad'; $('msg').textContent = err.message;
+    }
+  };
+})();
+</script>
+{% endblock %}

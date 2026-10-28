@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% block title %}sACN · PhoneLight{% endblock %}
+{% block main %}
+<div class="stats">
+  <div class="card stat"><div class="k">Listening</div><div class="v small mono" id="s-listen">–</div><div class="s">unicast, UDP</div></div>
+  <div class="card stat"><div class="k">Universe</div><div class="v" id="s-universe">–</div><div class="s"><a href="{{ url_for('admin_settings') }}">change</a></div></div>
+  <div class="card stat"><div class="k">Packets received</div><div class="v" id="s-packets">–</div><div class="s" id="s-ignored"></div></div>
+  <div class="card stat"><div class="k">Merge</div><div class="v">HTP</div><div class="s">highest priority sources only</div></div>
+</div>
+<div class="msg bad" id="err"></div>
+
+<div class="section-header"><div class="section-title">Sources</div></div>
+<div class="card table-wrap">
+  <table><thead><tr><th>Name</th><th>IP</th><th>Priority</th><th>FPS</th><th>Packets</th><th>Out of order</th><th>Last packet</th><th>CID</th></tr></thead>
+  <tbody id="sources"></tbody></table>
+</div>
+<div id="other" class="msg" style="margin-top:8px"></div>
+
+<div class="section-header">
+  <div class="section-title">Universe levels</div>
+  <label class="dim small"><input type="checkbox" id="pct"> show %</label>
+</div>
+<div class="dmx" id="dmx"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const { $, esc, num, setText, setHTML } = PL;
+  const cells = [];
+  let layout = '';
+  function build(s) {
+    const key = `${s.start_address}/${s.fixtures}/${s.bit_depth}`;
+    if (key === layout) return;
+    layout = key;
+    const per = s.bit_depth === 16 ? 6 : 3, first = s.start_address, last = first + s.fixtures * per - 1;
+    const colors = ['#ef4444', '#22c55e', '#3b82f6'];
+    let html = '';
+    for (let ch = 1; ch <= 512; ch++) {
+      let cls = '', style = '', title = `ch ${ch}`;
+      if (ch >= first && ch <= last) {
+        const off = ch - first, fx = Math.floor(off / per) + 1, comp = Math.floor((off % per) / (per / 3));
+        cls = 'fxc'; style = ` style="--c:${colors[comp]}"`;
+        title += ` · fixture ${fx} ${'RGB'[comp]}${per === 6 ? (off % 2 ? ' fine' : ' coarse') : ''}`;
+      }
+      html += `<div class="${cls}"${style} title="${title}"><i></i><span>${ch}</span><b>0</b></div>`;
+    }
+    $('dmx').innerHTML = html;
+    cells.length = 0;
+    for (const el of $('dmx').children) cells.push({ bar: el.children[0], val: el.children[2], v: -1 });
+  }
+  PL.feed(['levels'], (d) => {
+    build(d.settings);
+    const pct = $('pct').checked;
+    if (d.levels) d.levels.forEach((v, i) => {
+      const c = cells[i];
+      const key = pct ? v + 1000 : v;
+      if (c.v === key) return;
+      c.v = key;
+      c.bar.style.height = (v / 2.55) + '%';
+      c.val.textContent = pct ? Math.round(v / 2.55) : v;
+    });
+    setText($('s-listen'), d.sacn.listen);
+    setText($('s-universe'), String(d.settings.universe));
+    setText($('s-packets'), String(d.sacn.packets));
+    setText($('s-ignored'), `${d.sacn.ignored} not E1.31 data / preview`);
+    setText($('err'), d.sacn.error || '');
+    setHTML($('sources'), d.sacn.sources.length ? d.sacn.sources.map((s) => `<tr><td>${esc(s.name)}</td><td class="mono">${esc(s.ip)}</td>` +
+      `<td>${s.priority}</td><td class="mono">${num(s.fps, 1)}</td><td class="mono">${s.packets}</td><td class="mono">${s.out_of_order}</td>` +
+      `<td class="mono">${num(s.age * 1000)} ms ago</td><td class="mono dim">${esc(s.cid)}</td></tr>`).join('')
+      : `<tr><td colspan="8" class="empty">No source is sending universe ${d.settings.universe} to this server.</td></tr>`);
+    setHTML($('other'), d.sacn.other_universes.length ? '<span class="dim">Also arriving (ignored): </span>' +
+      d.sacn.other_universes.map((u) => `universe <b>${u.universe}</b> from ${esc(u.ip)}`).join(', ') : '');
+  });
+})();
+</script>
+{% endblock %}

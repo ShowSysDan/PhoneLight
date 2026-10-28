@@ -1,0 +1,4 @@
+flask>=3.0,<4
+flask-sock>=0.7,<1
+gevent>=24.2
+gunicorn>=22,<27

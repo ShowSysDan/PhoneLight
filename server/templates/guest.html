@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>PhoneLight</title>
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
+#c{position:fixed;inset:0;background:#000}
+#go{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+  padding:24px;color:#fff;font:16px/1.4 system-ui,-apple-system,sans-serif;text-align:center;background:#000}
+#go b{font-size:28px;letter-spacing:.5px}
+#go button{font:inherit;font-size:20px;font-weight:600;color:#000;background:#fff;border:0;border-radius:40px;padding:16px 40px}
+#go small{max-width:340px;color:#999;font-size:12px}
+#s{position:fixed;left:0;right:0;bottom:8px;text-align:center;color:#fff;opacity:.35;font:11px system-ui,sans-serif;pointer-events:none}
+</style>
+</head><body>
+<div id="c"></div>
+<div id="go">
+<b>PhoneLight</b>
+<div>Turn your brightness up, then tap to join the light show.</div>
+<button id="b">Tap to start</button>
+<small>To run the show this page logs basic technical details about your device (IP address, browser,
+screen size, language, time zone) and how long you are connected. Nothing personal is asked for or stored.</small>
+</div>
+<div id="s"></div>
+<script>
+(function(){
+var c=document.getElementById('c'),go=document.getElementById('go'),st=document.getElementById('s');
+var ls={};try{ls=window.localStorage||{}}catch(e){}
+function get(k){try{return ls.getItem?ls.getItem(k):null}catch(e){return null}}
+function put(k,v){try{ls.setItem&&ls.setItem(k,v)}catch(e){}}
+var m=document.cookie.match(/(?:^|; )pl_id=([\w-]+)/);
+var id=get('pl_id')||(m&&m[1]);
+if(!id){id='';var a='abcdefghijklmnopqrstuvwxyz0123456789';for(var i=0;i<24;i++)id+=a[Math.random()*36|0]}
+put('pl_id',id);document.cookie='pl_id='+id+';max-age=31536000;path=/;samesite=lax';
+var ws,tries=0,blackT,lockS,last=0,syncT,nsync=0;
+// Sync: frames carry "show at server ms" (uint32). off = server clock - our clock, from
+// NTP-style samples; keep the lowest-round-trip of the last 8. q = frames waiting for their time.
+var off=null,samples=[],q=[],shown='',now=function(){return performance.now()};
+function paint(col){if(col!==shown){shown=col;c.style.background=col}}
+function black(){q=[];paint('#000')}
+function sync(){if(ws&&ws.readyState==1)ws.send('s'+now().toFixed(1));syncT=setTimeout(sync,++nsync<6?150:4000)}
+function synced(d){
+  var p=d.slice(1).split(','),c0=+p[0],t1=+p[1],t2=+p[2],c3=now();
+  samples.push([(c3-c0)-(t2-t1),((t1-c0)+(t2-c3))/2]);if(samples.length>8)samples.shift();
+  var b=samples[0];for(var i=1;i<samples.length;i++)if(samples[i][0]<b[0])b=samples[i];off=b[1];
+}
+function frame(b){
+  var col='rgb('+b[0]+','+b[1]+','+b[2]+')';
+  if(off===null||b.length<7){q=[];return paint(col)}
+  var at=((b[3]<<24|b[4]<<16|b[5]<<8|b[6])>>>0),wait=(at-(Math.round(now()+off)>>>0))|0;
+  if(wait<=0||wait>2000){q=[];return paint(col)}   // late (or nonsense): show now, it is the newest
+  q.push([now()+wait,col]);if(q.length>64)q.shift();
+}
+function tick(){var t=now(),col=null;while(q.length&&q[0][0]<=t)col=q.shift()[1];if(col)paint(col);requestAnimationFrame(tick)}
+function hello(){
+  var n=navigator,cn=n.connection||{},f=parseInt(get('pl_fx'),10);
+  return JSON.stringify({id:id,fixture:f>0?f:undefined,sw:screen.width,sh:screen.height,dpr:window.devicePixelRatio||1,
+    lang:n.language,tz:(window.Intl&&Intl.DateTimeFormat().resolvedOptions().timeZone)||'',touch:n.maxTouchPoints||0,
+    cores:n.hardwareConcurrency||0,mem:n.deviceMemory||0,conn:cn.effectiveType||'',plat:n.platform||'',
+    standalone:!!(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||!!n.standalone});
+}
+function connect(){
+  ws=new WebSocket((location.protocol=='https:'?'wss://':'ws://')+location.host+'/ws');
+  ws.binaryType='arraybuffer';
+  ws.onopen=function(){tries=0;last=Date.now();clearTimeout(blackT);st.textContent='';ws.send(hello());
+    samples=[];off=null;nsync=0;clearTimeout(syncT);sync()};
+  ws.onmessage=function(e){
+    var d=e.data;last=Date.now();
+    if(typeof d!='string')return frame(new Uint8Array(d));
+    if(d[0]=='p')ws.send(d);else if(d[0]=='s')synced(d);else if(d[0]=='f')put('pl_fx',d.slice(1));
+  };
+  ws.onclose=function(){
+    ws=null;clearTimeout(syncT);clearTimeout(blackT);blackT=setTimeout(black,3000);st.textContent='reconnecting…';
+    // back off with jitter so a server restart is not hit by every phone at once
+    setTimeout(connect,Math.min(5000,500*++tries)+Math.random()*2000);
+  };
+}
+// Keep the screen on: the Wake Lock API (HTTPS only), else a tiny muted looping video (works over HTTP).
+var vid;
+function video(){
+  if(!vid){vid=document.createElement('video');vid.muted=true;vid.loop=true;vid.setAttribute('playsinline','');
+    vid.setAttribute('muted','');vid.style.cssText='position:fixed;width:1px;height:1px;opacity:.01;pointer-events:none';
+    vid.src='/static/keepawake.mp4';document.body.appendChild(vid)}
+  var p=vid.play();p&&p.catch&&p.catch(function(){});
+}
+function lock(){
+  if(document.visibilityState!='visible')return;
+  if(navigator.wakeLock)navigator.wakeLock.request('screen').then(function(l){lockS=l}).catch(video);else video();
+}
+document.getElementById('b').onclick=function(){
+  var d=document.documentElement,r=d.requestFullscreen||d.webkitRequestFullscreen;
+  if(r)try{var p=r.call(d);p&&p.catch&&p.catch(function(){})}catch(e){}
+  go.style.display='none';lock();connect();requestAnimationFrame(tick);
+};
+document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState=='visible')lock();
+});
+// the server pings every 5 s: silence for 12 s means a dead socket (phone slept, Wi-Fi roamed)
+setInterval(function(){if(ws&&ws.readyState==1&&Date.now()-last>12000)ws.close()},3000);
+})();
+</script>
+</body></html>

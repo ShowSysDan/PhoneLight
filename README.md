@@ -1,0 +1,406 @@
+# PhoneLight
+
+Version **0.1.0** · see [CHANGELOG.md](CHANGELOG.md)
+
+Crowd lighting for festivals: the audience opens a web page on their phones,
+taps once, and their whole screen becomes a light that the lighting console
+drives over **sACN** (E1.31). The server splits the crowd evenly into
+**fixtures** (groups), so a console can chase, split and colour sections of
+the crowd like any other RGB fixtures.
+
+> **Trial build.** SQLite for now. If PhoneLight goes ahead it moves to
+> PostgreSQL like our other apps (see [Moving to PostgreSQL](#moving-to-postgresql)).
+> Plain HTTP on the internal network for now; HTTPS on a public domain later.
+
+## Contents
+- [How it works](#how-it-works)
+- [Install (step by step)](#install-step-by-step)
+- [Console setup](#console-setup)
+- [Using the admin](#using-the-admin)
+- [Testing without a console](#testing-without-a-console)
+- [Keeping phones in sync](#keeping-phones-in-sync)
+- [Performance](#performance)
+- [What is logged about guests](#what-is-logged-about-guests)
+- [Configuration (.env)](#configuration-env)
+- [Updating, logs, backups, uninstall](#updating-logs-backups-uninstall)
+- [Development](#development)
+- [Moving to PostgreSQL](#moving-to-postgresql)
+- [Known limits](#known-limits)
+
+## How it works
+
+```
+ Lighting console ──sACN unicast, UDP 5568──┐
+                                            ▼
+ ┌──────────────────── PhoneLight server (one process) ─────────────────────┐
+ │ sacn.Receiver   one universe, HTP merge of the highest-priority sources  │
+ │      │  every accepted packet, straight through (no queue)               │
+ │      ▼                                                                   │
+ │ engine.Engine   levels → one RGB per fixture (8- or 16-bit), master,     │
+ │      │          signal-loss hold + fade, admin overrides                 │
+ │      ▼          publishes only when a colour actually changes            │
+ │ hub.Hub         guests split evenly across fixtures; each changed        │
+ │      │          fixture's frame (colour + show-at time) built ONCE,      │
+ │      │          written to its phones; slow phones get the newest only   │
+ │      ▼                                                                   │
+ │ tracker         connects, durations, latency → SQLite (batched, 1/s)     │
+ └───────────────────────────────┬──────────────────────────────────────────┘
+                                 │ WebSocket (ws://server:5420/ws)
+                ┌────────────────┼────────────────┐
+             phone            phone            phone    … (full-screen colour)
+```
+
+- **Guest page** (`/`): one ~6 KB HTML file, no frameworks, no external
+  files. Tap to start → full screen, screen kept awake, WebSocket opened.
+  Each colour arrives as 7 bytes (R, G, B + when to show it) and is painted
+  at that moment (see [Keeping phones in sync](#keeping-phones-in-sync)).
+  If the connection drops the phone goes black after 3 s and reconnects
+  (with a random delay, so a server restart is not hit by every phone at once).
+- **Latest frame wins.** Nothing is ever queued for a phone. If a phone (or
+  its Wi-Fi) can't keep up, it skips straight to the current colour.
+- **Fixtures:** with *Fixtures = 3*, every new phone joins whichever group has
+  the fewest phones, so the groups stay even. Fixture 1 starts at the *Start
+  address*; the rest follow on: 3 channels each (R G B) in 8-bit mode, 6 in
+  16-bit mode (R, R fine, G, G fine, B, B fine). A phone that reconnects
+  goes back to its old group when that group is one of the emptiest.
+  Changing the fixture count (or pressing *Rebalance groups*) deals everyone
+  out again evenly.
+- **sACN merge:** HTP. Among the sources heard in the last 2.5 s, only those
+  at the highest priority count, merged highest-value-wins per channel.
+- **Signal loss:** sACN is *lost* after 2.5 s without a packet (or at once
+  when the console ends its stream). Phones then hold the last look for
+  *Signal-loss hold* seconds, then fade to black over *Signal-loss fade*
+  seconds. Both are on the Settings page.
+
+## Install (step by step)
+
+We always install in the service user's **home directory**, in a Python
+**venv** inside the clone (`~/PhoneLight/venv`). Tested on Ubuntu 22.04/24.04
+and Debian 12; any Linux with systemd and Python 3.9+ works.
+
+### 1. Prepare the server
+
+Give the server a **fixed IP** on the show network (DHCP reservation or a
+static address): the console sends unicast to that address and the QR code
+points at it.
+
+```bash
+sudo apt-get update
+```
+
+```bash
+sudo apt-get install -y git python3 python3-venv python3-pip
+```
+
+### 2. Clone into your home directory
+
+Log in as the user that will run the service (not root), then:
+
+```bash
+cd ~
+```
+
+```bash
+git clone https://github.com/ShowSysDan/PhoneLight.git
+```
+
+```bash
+cd ~/PhoneLight
+```
+
+### 3. Run the installer
+
+```bash
+sudo ./install.sh
+```
+
+It:
+1. creates the venv at `~/PhoneLight/venv` and installs `requirements.txt` into it
+   (nothing is installed system-wide with pip);
+2. creates `~/PhoneLight/.env` from `.env.example` (mode 600; the defaults work);
+3. creates the SQLite database at `~/PhoneLight/data/phonelight.db`;
+4. installs and starts the systemd service `phonelight`, running as **you**
+   (the user who ran `sudo`), from `~/PhoneLight/start.sh`;
+5. prints the guest and admin URLs.
+
+Run it without `sudo` (`./install.sh`) to set up only the venv and database,
+no service. Then start it in the foreground with `./start.sh` (Ctrl-C to stop).
+
+### 4. Open the firewall (if one is on)
+
+The guests need TCP 5420; the console needs UDP 5568.
+
+```bash
+sudo ufw allow 5420/tcp
+```
+
+```bash
+sudo ufw allow 5568/udp
+```
+
+### 5. Check it
+
+```bash
+systemctl status phonelight
+```
+
+```bash
+curl http://localhost:5420/healthz
+```
+
+Then open `http://<server-ip>:5420/admin` in a browser.
+
+### 6. Lock down the admin (recommended)
+
+There is no admin sign-in yet, so anyone who can reach the server could open
+`/admin`. Limit it to your control network: edit `~/PhoneLight/.env`, set
+for example `ADMIN_ALLOW=192.168.10.0/24` (IPs and networks, comma-separated),
+then:
+
+```bash
+sudo systemctl restart phonelight
+```
+
+### 7. Make the QR code
+
+Point the audience QR code at `http://<server-ip>:5420/`. (Later, with a
+public domain and HTTPS, it becomes `https://<domain>/`.)
+
+### Running it by hand (no systemd)
+
+```bash
+cd ~/PhoneLight && ./install.sh && ./start.sh
+```
+
+## Console setup
+
+1. Patch *Fixtures* × generic **RGB** fixtures (8-bit: 3 channels; 16-bit:
+   6 channels) from the *Start address* in one universe.
+2. Set that universe to output **sACN unicast** to the PhoneLight server's IP
+   (no multicast needed; PhoneLight does not join multicast groups).
+3. On the admin **Settings** page set the same universe, start address,
+   fixture count and 8/16-bit mode.
+4. The **sACN monitor** page shows the source, its frame rate, and all 512
+   levels with the fixtures' channels outlined. If the console sends to a
+   different universe, that page says so ("Also arriving (ignored): universe …").
+
+Two consoles (main + backup) work: give the backup a lower priority, or the
+same priority to merge them HTP.
+
+## Using the admin
+
+| Page | What it shows / does |
+|---|---|
+| **Live** | Phones connected, average round-trip latency, output frames/s, sACN rate; a live swatch per fixture with its phone count. Output buttons: **Live sACN**, **Identify** (every fixture a different colour, to check groups), **Solid colour** (picker, sends to every phone; overrides the console), **Blackout**, **Rebalance groups**. Overrides are not saved: a restart goes back to Live sACN. |
+| **sACN monitor** | Listening address, packet counts, every source (name, IP, priority, fps, out-of-order packets, CID), the 512 levels (fixture channels outlined R/G/B; hover a cell for fixture and colour). |
+| **Clients** | Phones connected now (fixture, IP, device, OS, browser, connected time, last and average latency). Client log: every browser seen, visits, total time, average latency, device details; click one for its sessions. *Clear log* deletes the history. |
+| **Settings** | Universe, start address, fixtures, 8/16-bit, master dimmer, sync delay, signal-loss hold and fade, how long client data is kept. Applied live, no restart. |
+
+The header always shows the sACN state, how many phones are connected and,
+in amber, any active override.
+
+## Testing without a console
+
+`tools/sacn_sender.py` sends a test pattern over unicast sACN (standard
+library only, so it runs on any laptop with Python 3):
+
+```bash
+python3 tools/sacn_sender.py <server-ip> --fixtures 3 --pattern rainbow
+```
+
+Patterns: `rainbow`, `chase`, `flash`, `static --rgb ff0080`. Options:
+`-u` universe, `--fps`, `--bits 16`, `--start`, `--priority`, `--name`.
+Ctrl-C ends the stream (phones hold, then fade).
+
+`tools/load_test.py` simulates phones and measures them (run it from the
+server's venv):
+
+```bash
+~/PhoneLight/venv/bin/python tools/load_test.py http://<server-ip>:5420 -n 500 -t 30 --sacn
+```
+
+With `--sacn` it sends the sACN itself and reports the **end-to-end delay**
+from the UDP packet to each simulated phone receiving the colour, when it
+would show it (with the Sync delay) and the **sync spread** between phones.
+Run it from a second machine to include the real network.
+
+## Keeping phones in sync
+
+Phones have different latencies (Wi-Fi, power saving, how busy the phone
+is), so "show it when it arrives" puts them tens of milliseconds apart.
+PhoneLight uses a lightweight NTP-style sync, not PTP:
+
+1. **Each phone works out its clock offset from the server.** It sends
+   its clock reading (`performance.now()`, a steady clock that does not jump
+   when the phone's time is set) and the server answers with when it got
+   the message and when it replied. From that one round trip the phone
+   computes the offset and the round-trip time. It keeps the
+   lowest-round-trip sample of its last 8 (the least delayed one is the most
+   accurate), taking 6 quickly on connect, then one every 4 s, which also
+   tracks clock drift.
+2. **Every frame says when to show it:** "server time T", where T = the
+   moment the console's change was processed + **Sync delay** (Settings,
+   default 100 ms). It is the same 7 bytes for every phone, so the server
+   still builds each frame once.
+3. **Each phone paints at T on its own clock**, on its next screen refresh.
+   A phone that got the frame after T (its latency is above the delay)
+   shows it at once. A newer frame always replaces older ones.
+
+So the server doesn't time each phone. It sets one deadline per frame and
+each phone meets it with its own clock. The trade-off is the **Sync delay**: every change reaches the crowd that much after
+the console sends it, and every phone with less latency than that changes
+together. Raise it on a congested network (more phones in sync, more delay);
+set it to 0 for "as fast as possible, no sync".
+
+How close: in the load test (`tools/load_test.py --sacn`), with each
+simulated phone on its own random clock, every phone showed each frame
+within **~2 ms (200 phones) / ~4 ms (1000 phones) median**, ~100 ms after the
+console. Three real browser tabs flashing together matched to within 1 ms.
+Real phones add their own screen timing (up to one refresh, ~16 ms at 60 Hz)
+and any asymmetry in their Wi-Fi path, so expect them to be within about one
+or two screen refreshes of each other.
+
+## Performance
+
+Measured on a 4-core cloud VM, server and simulated phones on the same
+machine, sACN at 40 fps with every packet a new colour (the worst case),
+Sync delay 100 ms:
+
+| Phones | Frames/s per phone | sACN → phone arrival (median / p99) | Phone-to-phone spread (median / p95) | Server CPU | Server memory |
+|---|---|---|---|---|---|
+| 200 | ~40 (all that were sent) | 6 ms / 20 ms | 1.6 ms / 3 ms | ~7% of one core | ~55 MB |
+| 1000 | ~39 | 7 ms / 26 ms | 4 ms / 6–9 ms | ~25–30% of one core | ~95 MB |
+
+- Memory stays flat over thousands of connects and disconnects (no growth per
+  connection or with uptime). Every list in the server has a cap or is pruned.
+- 50 phones that stopped reading were all closed by the server (ping
+  timeout) while 300 others ran at full rate, unaffected.
+- On a real show the limit is the **Wi-Fi**, not the server: phones on a busy
+  network will see more delay, and when they can't keep up they get fewer
+  frames (always the newest), not late ones. Python reading 40 fps of sACN is
+  trivial; the server does almost nothing when the colours aren't changing.
+
+## What is logged about guests
+
+The guest page shows a short notice before the tap. What a web server can
+actually learn about a phone:
+
+| Field | Source |
+|---|---|
+| Client id | Random id the page keeps in localStorage + a cookie: how we know a phone came back |
+| IP address | As seen by the server (behind NAT, the router's) |
+| Device, OS, browser | Parsed from the User-Agent (Android hides the model on newer Chrome: shows "Android") |
+| Screen, pixel ratio, language, time zone, touch points, CPU cores, memory, network type, installed-as-app | Reported by the page in its hello |
+| Visits, connect / disconnect times, duration, fixture | Server |
+| Latency | Round trip of a ping every 5 s: last, average, min, max per session; running average per client |
+
+**MAC addresses are not available** to a web page or a web server on a routed
+network, and modern phones randomise them per Wi-Fi network anyway. Rows not
+seen for *Keep client data (days)* (default 30) are deleted hourly; *Clear
+log* on the Clients page deletes them all.
+
+## Configuration (.env)
+
+`~/PhoneLight/.env` (from `.env.example`, documented there). Restart after
+editing: `sudo systemctl restart phonelight`.
+
+| Key | Default | |
+|---|---|---|
+| `APP_PORT` | 5420 | Guest + admin HTTP port |
+| `ADMIN_ALLOW` | (anyone) | IPs / networks allowed to open `/admin` |
+| `SACN_BIND` | 0.0.0.0 | Listen on one interface's IP only |
+| `SACN_PORT` | 5568 | sACN UDP port |
+| `DB_PATH` | data/phonelight.db | SQLite file (relative = inside the app directory) |
+| `MAX_CONNECTIONS` | 4000 | Open sockets the server accepts |
+| `TRUST_PROXY` | off | Set 1 only behind a reverse proxy (HTTPS later) |
+| `ACCESS_LOG` | off | 1 = log every HTTP request |
+
+Show settings are on the admin Settings page (stored in the database).
+
+## Updating, logs, backups, uninstall
+
+Update (start.sh re-installs requirements when they change and applies any
+new database migration on every start):
+
+```bash
+cd ~/PhoneLight && git pull && sudo systemctl restart phonelight
+```
+
+Logs:
+
+```bash
+journalctl -u phonelight -f
+```
+
+Back up the database (safe while running; needs `sudo apt-get install -y sqlite3`):
+
+```bash
+sqlite3 ~/PhoneLight/data/phonelight.db ".backup ~/phonelight-$(date +%F).db"
+```
+
+Uninstall:
+
+```bash
+sudo systemctl disable --now phonelight && sudo rm /etc/systemd/system/phonelight.service && sudo systemctl daemon-reload
+```
+
+Then delete `~/PhoneLight` if you don't want the data.
+
+## Development
+
+```bash
+cd ~/PhoneLight && python3 -m venv venv && venv/bin/pip install -r requirements-dev.txt
+```
+
+```bash
+venv/bin/python -m server
+```
+
+(dev server on `APP_PORT`, gevent like production)
+
+```bash
+venv/bin/python -m pytest tests/
+```
+
+The tests start a real server in a subprocess, send real sACN over UDP and
+connect a real WebSocket, each run on its own throw-away database.
+
+Layout:
+
+```
+server/
+  app.py         Flask app, routes, the guest and admin WebSockets, Runtime
+  sacn.py        E1.31 parse, per-source state, HTP merge, UDP receiver
+  engine.py      levels -> fixture colours, modes, loss hold/fade
+  hub.py         guests, fixture assignment, fan-out, pings, reaper
+  tracker.py     client/session log (batched writes), UA parsing, purge
+  settings.py    show settings: definitions, validation, live apply
+  db.py          SQLite access     migrate.py + migrations/   schema
+  templates/     guest.html (the phone page) + admin pages
+  static/        admin CSS/JS, bundled fonts, keepawake.mp4
+tools/           sacn_sender.py, load_test.py
+```
+
+## Moving to PostgreSQL
+
+Kept easy on purpose: timestamps are ISO-8601 UTC text (→ `TIMESTAMPTZ`), ids
+are app-made text (no autoincrement), upserts use `ON CONFLICT`, and no
+SQLite-only SQL is used. The move is: `db.py` on psycopg2 with a pool and its
+own schema (like QSYSRadio), `?` → `%s`, the migrations rewritten for PG
+types, and a one-off copy of the `clients` / `sessions` / `settings` rows.
+The guest path never touches the database, so nothing on it changes.
+
+## Known limits
+
+- **One server process.** The sACN receiver, the engine and every phone's
+  socket share memory, so `start.sh` runs exactly one gunicorn worker
+  (gevent). Don't raise it. One process measured fine at 1000 phones.
+- **Screen sleep over HTTP.** The Wake Lock API needs HTTPS, so for now the
+  page plays a tiny silent looping video to keep the screen on (the same
+  trick as the NoSleep.js library; not yet tried on real phones here, so
+  check on a few iPhones and Androids before a show). With HTTPS the Wake
+  Lock API is used first.
+- **iPhone full screen.** iOS Safari has no full-screen API for pages; the
+  address bar stays unless the guest adds the page to the home screen. The
+  colour still fills the page.
+- **No admin sign-in** yet: use `ADMIN_ALLOW`.

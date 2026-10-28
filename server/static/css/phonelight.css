@@ -1,0 +1,121 @@
+/* PhoneLight admin: the same "broadcast console" look as QSYSRadio.
+   Fonts are bundled (no CDN) so the admin works on an isolated show network. */
+@font-face { font-family: 'Outfit'; font-weight: 100 900; font-display: swap;
+  src: url('../fonts/outfit-latin-wght-normal.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-weight: 100 800; font-display: swap;
+  src: url('../fonts/jetbrains-mono-latin-wght-normal.woff2') format('woff2'); }
+
+:root {
+  color-scheme: dark;
+  --bg: #06070b; --surface: #10121a; --surface2: #181b26; --raised: #1d2130;
+  --border: rgba(255,255,255,.075); --border-hover: rgba(255,255,255,.16);
+  --text: #e4e6ed; --text-dim: #8b8fa3; --text-muted: #5f6376;
+  --accent: #a78bfa; --cyan: #22d3ee; --pink: #f472b6; --green: #22c55e;
+  --danger: #ef4444; --warning: #f59e0b;
+  --radius: 8px;
+  --hl: inset 0 1px 0 rgba(255,255,255,.055);
+  --lift: 0 1px 2px rgba(0,0,0,.45), 0 10px 30px -10px rgba(0,0,0,.7);
+  --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --sans: 'Outfit', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: var(--sans); color: var(--text); min-height: 100vh; font-size: 14px; line-height: 1.45;
+  background:
+    radial-gradient(1000px 560px at 88% -10%, rgba(167,139,250,.12), transparent 60%),
+    radial-gradient(900px 640px at -8% 110%, rgba(34,211,238,.10), transparent 60%),
+    linear-gradient(rgba(255,255,255,.02) 1px, transparent 1px) 0 0/32px 32px,
+    linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px) 0 0/32px 32px,
+    var(--bg);
+  background-attachment: fixed;
+}
+a { color: var(--accent); text-decoration: none; }
+.mono { font-family: var(--mono); }
+.dim { color: var(--text-dim); }
+.small { font-size: 12px; }
+[hidden] { display: none !important; }
+
+/* ── Header + nav ───────────────────────────────────────────────────────── */
+.header { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 10px 28px;
+  background: linear-gradient(180deg, rgba(26,29,42,.92), rgba(12,14,20,.86)); border-bottom: 1px solid var(--border); }
+.header-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.logo { font-family: var(--mono); font-size: 20px; font-weight: 700; letter-spacing: -.5px;
+  background: linear-gradient(90deg, var(--pink), var(--accent), var(--cyan)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.version { font-size: 10px; color: var(--text-dim); font-family: var(--mono); background: var(--surface2);
+  padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border); }
+.pill { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; padding: 4px 12px; border-radius: 20px; font-family: var(--mono);
+  color: var(--text-dim); border: 1px solid var(--border-hover); background: var(--surface2); }
+.pill i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pill.ok { color: var(--green); border-color: rgba(34,197,94,.5); background: rgba(34,197,94,.12); }
+.pill.warn { color: var(--warning); border-color: rgba(245,158,11,.5); background: rgba(245,158,11,.12); }
+.pill.bad { color: var(--danger); border-color: rgba(239,68,68,.5); background: rgba(239,68,68,.12); }
+.pill.info { color: var(--accent); border-color: rgba(167,139,250,.5); background: rgba(167,139,250,.12); }
+.nav { display: flex; gap: 4px; padding: 0 22px; border-bottom: 1px solid var(--border); background: rgba(12,14,20,.7); overflow-x: auto; }
+.nav a { padding: 11px 14px; color: var(--text-dim); border-bottom: 2px solid transparent; white-space: nowrap; font-weight: 500; }
+.nav a:hover { color: var(--text); }
+.nav a.active { color: var(--text); border-bottom-color: var(--accent); }
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+.main { padding: 20px 28px 48px; max-width: 1500px; margin: 0 auto; }
+.section-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 22px 0 12px; }
+.section-header:first-child { margin-top: 0; }
+.section-title { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; display: flex; align-items: center; gap: 10px; }
+.section-title::before { content: ''; width: 4px; height: 16px; border-radius: 2px; background: linear-gradient(var(--accent), var(--cyan)); }
+.card { background: linear-gradient(180deg, var(--surface2), var(--surface)); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--hl), var(--lift); padding: 16px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.stat .k { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--text-dim); }
+.stat .v { font-family: var(--mono); font-size: 24px; font-weight: 600; margin-top: 2px; }
+.stat .s { font-size: 12px; color: var(--text-muted); }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+/* ── Controls ───────────────────────────────────────────────────────────── */
+button, .btn { font: inherit; font-weight: 500; color: var(--text); background: var(--raised); border: 1px solid var(--border-hover);
+  border-radius: var(--radius); padding: 7px 14px; cursor: pointer; box-shadow: var(--hl); }
+button:hover { border-color: rgba(255,255,255,.3); }
+button.on { background: rgba(167,139,250,.22); border-color: var(--accent); color: #fff; }
+button.danger { color: var(--danger); border-color: rgba(239,68,68,.45); }
+button.primary { background: var(--accent); color: #0b0716; border-color: var(--accent); font-weight: 600; }
+input, select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border-hover); border-radius: 6px; padding: 7px 10px; }
+input[type=color] { padding: 2px; width: 44px; height: 36px; cursor: pointer; }
+.form { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.field label { display: block; font-weight: 600; margin-bottom: 4px; }
+.field input, .field select { width: 100%; }
+.field .help { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+.msg { font-size: 13px; }
+.msg.bad { color: var(--danger); }
+.msg.ok { color: var(--green); }
+
+/* ── Fixture preview ────────────────────────────────────────────────────── */
+.fixtures { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+.fx { border-radius: var(--radius); border: 1px solid var(--border-hover); overflow: hidden; background: var(--surface); }
+.fx .sw { height: 74px; background: #000; }
+.fx .lbl { display: flex; justify-content: space-between; padding: 5px 8px; font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+.fx .lbl b { color: var(--text); }
+
+/* ── DMX monitor ────────────────────────────────────────────────────────── */
+.dmx { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 3px; font-family: var(--mono); }
+.dmx div { position: relative; border-radius: 4px; background: var(--surface); border: 1px solid var(--border); padding: 2px 4px 3px; overflow: hidden; }
+.dmx div i { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(167,139,250,.35); }
+.dmx div span, .dmx div b { position: relative; display: block; }
+.dmx div span { font-size: 9px; color: var(--text-muted); }
+.dmx div b { font-size: 12px; font-weight: 500; }
+.dmx div.fxc { border-color: var(--c); }
+.dmx div.fxc span { color: var(--c); }
+
+/* ── Tables ─────────────────────────────────────────────────────────────── */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-dim); font-weight: 600;
+  padding: 8px 10px; border-bottom: 1px solid var(--border-hover); white-space: nowrap; }
+td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+td.mono, td .mono { font-size: 12px; }
+tr.click { cursor: pointer; }
+tr.click:hover td { background: rgba(255,255,255,.03); }
+tr.sub td { background: rgba(0,0,0,.25); }
+.empty { color: var(--text-muted); padding: 14px 10px; }
+
+@media (max-width: 700px) {
+  .header, .main { padding-left: 14px; padding-right: 14px; }
+  .nav { padding: 0 8px; }
+}

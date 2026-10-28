@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% block title %}Live · PhoneLight{% endblock %}
+{% block main %}
+<div class="stats">
+  <div class="card stat"><div class="k">Phones connected</div><div class="v" id="s-guests">–</div><div class="s" id="s-connects"></div></div>
+  <div class="card stat"><div class="k">Avg latency (round trip)</div><div class="v" id="s-latency">–</div><div class="s">live phones, ping every 5 s</div></div>
+  <div class="card stat"><div class="k">Output frames / s</div><div class="v" id="s-fps">–</div><div class="s">changes pushed to phones</div></div>
+  <div class="card stat"><div class="k">sACN in</div><div class="v" id="s-sacn">–</div><div class="s" id="s-sacn-sub"></div></div>
+</div>
+
+<div class="section-header">
+  <div class="section-title">Output</div>
+  <div class="row">
+    <button data-mode="sacn">Live sACN</button>
+    <button data-mode="identify" title="Each fixture a different colour: check the groups">Identify</button>
+    <input type="color" id="override" value="#ffffff" title="Override colour">
+    <button data-mode="color" title="Send this colour to every phone">Solid colour</button>
+    <button data-mode="blackout" class="danger">Blackout</button>
+    <button id="rebalance" title="Deal every phone out again, evenly">Rebalance groups</button>
+  </div>
+</div>
+<div class="msg" id="msg"></div>
+
+<div class="section-header">
+  <div class="section-title">Fixture preview</div>
+  <span class="dim small" id="fx-sub"></span>
+</div>
+<div class="fixtures" id="fixtures"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const { $, esc, num, setText, setHTML, api } = PL;
+  const tiles = [];
+  function build(n) {
+    let html = '';
+    for (let i = 0; i < n; i++) html += `<div class="fx"><div class="sw"></div><div class="lbl"><b>${i + 1}</b><span></span><span></span></div></div>`;
+    setHTML($('fixtures'), html);
+    tiles.length = 0;
+    for (const el of $('fixtures').children) tiles.push({ sw: el.firstChild, hex: el.lastChild.children[1], n: el.lastChild.children[2], c: '' });
+  }
+  PL.feed([], (d) => {
+    const fx = d.engine.fixtures, counts = d.counts;
+    if (tiles.length !== fx.length) build(fx.length);
+    fx.forEach((c, i) => {
+      const t = tiles[i];
+      if (t.c !== c) { t.c = c; t.sw.style.background = c; t.hex.textContent = c; }
+      setText(t.n, `${counts[i] ?? 0} 📱`);
+    });
+    setText($('s-guests'), String(d.connected));
+    setText($('s-fps'), num(d.engine.fps, 1));
+    const fps = d.sacn.sources.reduce((a, s) => Math.max(a, s.fps), 0);
+    setText($('s-sacn'), d.sacn.sources.length ? `${num(fps, 1)} fps` : '–');
+    setText($('s-sacn-sub'), `universe ${d.settings.universe}, ${d.sacn.sources.length} source(s)`);
+    const s = d.settings;
+    setText($('fx-sub'), `${s.fixtures} × ${s.bit_depth}-bit RGB from address ${s.start_address} · master ${s.master}%`);
+    document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === d.engine.mode));
+  });
+  // latency + connects are in the guests view (1 Hz)
+  PL.feed(['guests'], (d) => {
+    if (!d.guests) return;
+    setText($('s-latency'), d.guests.latency_avg == null ? '–' : `${num(d.guests.latency_avg)} ms`);
+    setText($('s-connects'), `${d.guests.total_connects} connects since start`);
+  });
+  const msg = (t, ok) => { $('msg').className = 'msg ' + (ok ? 'ok' : 'bad'); $('msg').textContent = t; };
+  document.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () =>
+    api('/admin/api/mode', { mode: b.dataset.mode, color: b.dataset.mode === 'color' ? $('override').value : undefined })
+      .then(() => msg('', true), (e) => msg(e.message)));
+  $('override').oninput = () => {
+    if (document.querySelector('[data-mode="color"]').classList.contains('on'))
+      api('/admin/api/mode', { mode: 'color', color: $('override').value }).catch((e) => msg(e.message));
+  };
+  $('rebalance').onclick = () => api('/admin/api/rebalance', {}).then((r) => msg(`Rebalanced: ${r.counts.join(' / ')}`, true), (e) => msg(e.message));
+})();
+</script>
+{% endblock %}
