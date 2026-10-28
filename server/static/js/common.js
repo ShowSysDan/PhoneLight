@@ -37,7 +37,7 @@ window.PL = (function () {
 
   const SIGNAL = { live: ['ok', 'sACN live'], hold: ['warn', 'sACN lost: holding'], fade: ['warn', 'sACN lost: fading'],
                    lost: ['bad', 'sACN lost'], none: ['bad', 'no sACN yet'] };
-  const MODE = { color: 'OVERRIDE: colour', identify: 'OVERRIDE: identify', blackout: 'OVERRIDE: blackout' };
+  const MODE = { color: 'TEST: manual colour', pattern: 'TEST: pattern', identify: 'OVERRIDE: identify', blackout: 'OVERRIDE: blackout' };
 
   let views = [], handlers = [], ws = null, tries = 0;
   function header(d) {

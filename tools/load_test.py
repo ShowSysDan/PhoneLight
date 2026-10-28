@@ -1,21 +1,23 @@
 """Simulate N phones against a running PhoneLight server and measure it.
 
-    venv/bin/python tools/load_test.py http://127.0.0.1:5420 -n 200 -t 30
+    venv/bin/python tools/load_test.py http://127.0.0.1:5420 -n 200 -t 30 --drive
 
 Each fake phone opens /ws, says hello, answers pings and counts colour
-frames. Run tools/sacn_sender.py at the same time so there is something to
-receive, or pass --sacn to have this script send the sACN itself and measure
-END-TO-END delay: from the UDP packet leaving to each phone receiving the
-colour (the packet's counter rides in the red channel of every fixture). At
-the end it prints frames per second per phone and that delay; if phones get
-fewer frames than are sent, frames were dropped (latest-wins), which is the
-intended behaviour under load.
+frames. Something has to change the colours while it runs: the console, a
+test pattern from the admin Live page, or --drive.
+
+--drive changes the colour itself through the admin test API (the same
+"Manual colour" as the Live page; no sACN is sent), --fps times a second,
+with a counter in the red channel, and measures END-TO-END delay: from the
+request leaving to each phone receiving the colour. The show is put back on
+Live sACN at the end. Needs the master dimmer at 100%.
 
 Each fake phone also runs the guest page's clock sync (with its own random
 clock offset) and works out WHEN it would show each frame, exactly like the
-page does. With --sacn the result includes the SYNC SPREAD: for each frame,
-how far apart the first and last phone show it (screen refresh not included).
-
+page does. With --drive the result includes the SYNC SPREAD: for each frame,
+how far apart the first and last phone show it (screen refresh not
+included). If phones get fewer frames than are sent, frames were dropped
+(latest-wins), which is the intended behaviour under load.
 
 Uses gevent (already installed for the server), so 1000 phones is one process.
 """
@@ -28,35 +30,32 @@ import json  # noqa: E402
 import random  # noqa: E402
 import statistics  # noqa: E402
 import time  # noqa: E402
-
-import socket  # noqa: E402
-import sys  # noqa: E402
-import uuid  # noqa: E402
-from pathlib import Path  # noqa: E402
+import urllib.request  # noqa: E402
 
 import gevent  # noqa: E402
 from simple_websocket import Client, ConnectionClosed  # noqa: E402
 
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sacn_sender import packet  # noqa: E402
-
-SENT = {}                    # counter -> monotonic send time (--sacn)
+SENT = {}                    # counter -> monotonic send time (--drive)
 SHOWN = {}                   # (counter, sent ms) -> [show times], for the sync spread
 
 
-def sacn_source(host, universe, fps, fixtures, until):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    cid, seq, start, n = uuid.uuid4().bytes, 0, time.monotonic(), 0
-    while time.monotonic() < until:
-        counter = n % 256
-        data = bytearray(512)
-        for f in range(fixtures):
-            data[f * 3:f * 3 + 3] = bytes((counter, 128, 64))
-        SENT[counter] = time.monotonic()
-        sock.sendto(packet(cid, 'load test', 100, seq, universe, data), (host, 5568))
-        seq, n = (seq + 1) & 0xFF, n + 1
-        gevent.sleep(max(0, start + n / fps - time.monotonic()))
+def set_mode(base, body):
+    req = urllib.request.Request(base + '/admin/api/mode', json.dumps(body).encode(),
+                                 {'Content-Type': 'application/json'})
+    urllib.request.urlopen(req, timeout=5).read()
+
+
+def driver(base, fps, until):
+    start, n = time.monotonic(), 0
+    try:
+        while time.monotonic() < until:
+            counter = n % 256
+            SENT[counter] = time.monotonic()
+            set_mode(base, {'mode': 'color', 'color': f'#{counter:02x}8040', 'quiet': True})
+            n += 1
+            gevent.sleep(max(0, start + n / fps - time.monotonic()))
+    finally:
+        set_mode(base, {'mode': 'sacn'})
 
 
 def phone(url, i, until, stats):
@@ -123,19 +122,16 @@ def main():
     ap.add_argument('-n', type=int, default=100, help='phones')
     ap.add_argument('-t', type=float, default=20, help='seconds')
     ap.add_argument('--ramp', type=float, default=2, help='seconds to connect them all over')
-    ap.add_argument('--sacn', action='store_true', help='send the sACN from here and measure end-to-end delay')
-    ap.add_argument('--fps', type=float, default=40, help='sACN rate with --sacn')
-    ap.add_argument('--universe', type=int, default=1)
-    ap.add_argument('--fixtures', type=int, default=3, help='match the server setting (8-bit) with --sacn')
+    ap.add_argument('--drive', action='store_true',
+                    help='change the colour through the admin test API and measure end-to-end delay')
+    ap.add_argument('--fps', type=float, default=40, help='colour changes per second with --drive')
     args = ap.parse_args()
     url = args.url.replace('http', 'ws', 1).rstrip('/') + '/ws'
     stats = {'frames': [], 'max_gap': [], 'delay': [], 'shown': [], 'failed': 0, 'closed': 0, 'errors': []}
     until = time.monotonic() + args.ramp + args.t
     jobs = []
-    if args.sacn:
-        host = args.url.split('//', 1)[1].split(':')[0].split('/')[0]
-        jobs.append(gevent.spawn(sacn_source, socket.gethostbyname(host), args.universe, args.fps,
-                                 args.fixtures, until))
+    if args.drive:
+        jobs.append(gevent.spawn(driver, args.url.rstrip('/'), args.fps, until))
     for i in range(args.n):
         jobs.append(gevent.spawn(phone, url, i, until, stats))
         gevent.sleep(args.ramp / args.n)
@@ -151,10 +147,10 @@ def main():
     d = sorted(stats['delay'])
     if d:
         pct = lambda p: d[min(len(d) - 1, int(len(d) * p))] * 1000  # noqa: E731
-        print(f'sACN -> phone delay: median {pct(.5):.1f} ms  p95 {pct(.95):.1f} ms  p99 {pct(.99):.1f} ms  '
+        print(f'change -> phone delay: median {pct(.5):.1f} ms  p95 {pct(.95):.1f} ms  p99 {pct(.99):.1f} ms  '
               f'max {d[-1] * 1000:.1f} ms  ({len(d)} samples)')
         d = sorted(stats['shown'])
-        print(f'sACN -> shown (with sync delay): median {pct(.5):.1f} ms  p95 {pct(.95):.1f} ms  '
+        print(f'change -> shown (with sync delay): median {pct(.5):.1f} ms  p95 {pct(.95):.1f} ms  '
               f'p99 {pct(.99):.1f} ms')
     spreads = sorted(max(v) - min(v) for v in SHOWN.values() if len(v) >= max(2, len(stats['frames']) // 2))
     if spreads:

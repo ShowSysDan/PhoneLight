@@ -10,7 +10,7 @@ import urllib.request
 from pathlib import Path
 
 import pytest
-from sacn_sender import packet
+from sacn_packets import packet
 from simple_websocket import Client
 
 from server import tracker
@@ -111,6 +111,13 @@ def test_sacn_to_phone(server):
         post(server, '/admin/api/mode', {'mode': 'sacn'})
         assert receive_color(ws, b'\xff\x00\x80')
         assert post(server, '/admin/api/mode', {'mode': 'color', 'color': 'nope'})[0] == 400
+        assert post(server, '/admin/api/mode', {'mode': 'color', 'color': '#123456', 'fixture': 1})[0] == 200
+        assert receive_color(ws, b'\x12\x34\x56')
+        assert post(server, '/admin/api/mode', {'mode': 'pattern', 'pattern': 'flash', 'color': '#0000ff',
+                                                 'rate': 5})[0] == 200
+        assert receive_color(ws, b'\x00\x00\xff') and receive_color(ws, b'\x00\x00\x00')
+        assert post(server, '/admin/api/mode', {'mode': 'pattern', 'pattern': 'nope'})[0] == 400
+        post(server, '/admin/api/mode', {'mode': 'sacn'})
         ws.send('s1000.0')                                  # clock sync round trip
         for _ in range(20):
             msg = ws.receive(timeout=1)

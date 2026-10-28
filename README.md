@@ -1,6 +1,6 @@
 # PhoneLight
 
-Version **0.1.0** · see [CHANGELOG.md](CHANGELOG.md)
+Version **0.2.0** · see [CHANGELOG.md](CHANGELOG.md)
 
 Crowd lighting for festivals: the audience opens a web page on their phones,
 taps once, and their whole screen becomes a light that the lighting console
@@ -191,7 +191,7 @@ same priority to merge them HTP.
 
 | Page | What it shows / does |
 |---|---|
-| **Live** | Phones connected, average round-trip latency, output frames/s, sACN rate; a live swatch per fixture with its phone count. Output buttons: **Live sACN**, **Identify** (every fixture a different colour, to check groups), **Solid colour** (picker, sends to every phone; overrides the console), **Blackout**, **Rebalance groups**. Overrides are not saved: a restart goes back to Live sACN. |
+| **Live** | Phones connected, average round-trip latency, output frames/s, sACN rate; a live swatch per fixture with its phone count. Output buttons: **Live sACN**, **Identify** (every fixture a different colour, to check groups), **Blackout**, **Rebalance groups**. **Test tools:** manual colour (all fixtures, or click one fixture) and patterns (chase / flash / rainbow); see [Testing without a console](#testing-without-a-console). Overrides and tests are not saved: a restart goes back to Live sACN. |
 | **sACN monitor** | Listening address, packet counts, every source (name, IP, priority, fps, out-of-order packets, CID), the 512 levels (fixture channels outlined R/G/B; hover a cell for fixture and colour). |
 | **Clients** | Phones connected now (fixture, IP, device, OS, browser, connected time, last and average latency). Client log: every browser seen, visits, total time, average latency, device details; click one for its sessions. *Clear log* deletes the history. |
 | **Settings** | Universe, start address, fixtures, 8/16-bit, master dimmer, sync delay, signal-loss hold and fade, how long client data is kept. Applied live, no restart. |
@@ -201,28 +201,33 @@ in amber, any active override.
 
 ## Testing without a console
 
-`tools/sacn_sender.py` sends a test pattern over unicast sACN (standard
-library only, so it runs on any laptop with Python 3):
+PhoneLight **never transmits sACN**, and there is deliberately no sACN
+sender in the repo, so a test can never leak onto the show network. To make
+colours without a console, use the **Test tools** on the admin Live page.
+They are generated inside the server and go only to the phones:
 
-```bash
-python3 tools/sacn_sender.py <server-ip> --fixtures 3 --pattern rainbow
-```
+- **Manual colour:** pick a colour, then *All fixtures*, or click a fixture's
+  swatch to give just that fixture the colour (the others keep their look).
+- **Pattern:** chase, flash or rainbow, with a colour and a rate per second.
+  A flash is the easiest way to see whether phones are changing in sync.
 
-Patterns: `rainbow`, `chase`, `flash`, `static --rgb ff0080`. Options:
-`-u` universe, `--fps`, `--bits 16`, `--start`, `--priority`, `--name`.
-Ctrl-C ends the stream (phones hold, then fade).
+The header shows **TEST** in amber while either is active; *Live sACN* hands
+the phones back to the console.
 
 `tools/load_test.py` simulates phones and measures them (run it from the
 server's venv):
 
 ```bash
-~/PhoneLight/venv/bin/python tools/load_test.py http://<server-ip>:5420 -n 500 -t 30 --sacn
+~/PhoneLight/venv/bin/python tools/load_test.py http://<server-ip>:5420 -n 500 -t 30 --drive
 ```
 
-With `--sacn` it sends the sACN itself and reports the **end-to-end delay**
-from the UDP packet to each simulated phone receiving the colour, when it
-would show it (with the Sync delay) and the **sync spread** between phones.
-Run it from a second machine to include the real network.
+With `--drive` it changes the colour itself through the same admin test API
+(no sACN) and reports the **end-to-end delay** from the change to each
+simulated phone receiving it, when the phone would show it (with the Sync
+delay) and the **sync spread** between phones. It puts the show back on
+Live sACN when it finishes, so don't run it during a show. Without
+`--drive` it just measures whatever is playing (the console or a test
+pattern). Run it from a second machine to include the real network.
 
 ## Keeping phones in sync
 
@@ -252,9 +257,9 @@ the console sends it, and every phone with less latency than that changes
 together. Raise it on a congested network (more phones in sync, more delay);
 set it to 0 for "as fast as possible, no sync".
 
-How close: in the load test (`tools/load_test.py --sacn`), with each
+How close: in the load test (`tools/load_test.py --drive`), with each
 simulated phone on its own random clock, every phone showed each frame
-within **~2 ms (200 phones) / ~4 ms (1000 phones) median**, ~100 ms after the
+within **~2–3 ms (200 phones) / ~4 ms (1000 phones) median**, ~100 ms after the
 console. Three real browser tabs flashing together matched to within 1 ms.
 Real phones add their own screen timing (up to one refresh, ~16 ms at 60 Hz)
 and any asymmetry in their Wi-Fi path, so expect them to be within about one
@@ -263,13 +268,14 @@ or two screen refreshes of each other.
 ## Performance
 
 Measured on a 4-core cloud VM, server and simulated phones on the same
-machine, sACN at 40 fps with every packet a new colour (the worst case),
-Sync delay 100 ms:
+machine, 40 colour changes a second (the worst case), Sync delay 100 ms.
+The 0.1.0 figures came from sACN input; from 0.2.0 the load test drives the
+colour through the admin test API, which adds the HTTP request (a few ms):
 
-| Phones | Frames/s per phone | sACN → phone arrival (median / p99) | Phone-to-phone spread (median / p95) | Server CPU | Server memory |
+| Phones | Frames/s per phone | Change → phone arrival (median / p99) | Phone-to-phone spread (median / p95) | Server CPU | Server memory |
 |---|---|---|---|---|---|
-| 200 | ~40 (all that were sent) | 6 ms / 20 ms | 1.6 ms / 3 ms | ~7% of one core | ~55 MB |
-| 1000 | ~39 | 7 ms / 26 ms | 4 ms / 6–9 ms | ~25–30% of one core | ~95 MB |
+| 200 | 40 (all that were sent) | 6–7 ms / 20–24 ms | 2–3 ms / 3–4 ms | ~7% of one core | ~55 MB |
+| 1000 | 40 | 7–13 ms / 26–30 ms | 4 ms / 6–9 ms | ~25–33% of one core | ~95 MB |
 
 - Memory stays flat over thousands of connects and disconnects (no growth per
   connection or with uptime). Every list in the server has a cap or is pruned.
@@ -378,7 +384,7 @@ server/
   db.py          SQLite access     migrate.py + migrations/   schema
   templates/     guest.html (the phone page) + admin pages
   static/        admin CSS/JS, bundled fonts, keepawake.mp4
-tools/           sacn_sender.py, load_test.py
+tools/           load_test.py (simulated phones; no sACN sender, on purpose)
 ```
 
 ## Moving to PostgreSQL

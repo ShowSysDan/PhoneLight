@@ -180,6 +180,8 @@ def create_app(start=True):
     # ── admin API ──────────────────────────────────────────────────────────
     @app.post('/admin/api/mode')
     def api_mode():
+        """{mode, color?: '#rrggbb', fixture?: n, pattern?, rate?} -> the Live page's
+        output and test tools (all made inside the engine; nothing is sent as sACN)."""
         body = request.get_json(silent=True) or {}
         color = None
         if body.get('color'):
@@ -190,10 +192,14 @@ def create_app(start=True):
             if len(color) != 3:
                 return jsonify(error='colour must be #rrggbb'), 400
         try:
-            rt.engine.set_mode(body.get('mode', 'sacn'), color)
-        except ValueError as exc:
+            fixture = int(body['fixture']) if body.get('fixture') is not None else None
+            rate = float(body['rate']) if body.get('rate') is not None else None
+            rt.engine.set_mode(body.get('mode', 'sacn'), color, fixture, body.get('pattern'), rate)
+        except (TypeError, ValueError) as exc:
             return jsonify(error=str(exc)), 400
-        log.info('mode -> %s %s', rt.engine.mode, body.get('color') or '')
+        if not body.get('quiet'):
+            log.info('mode -> %s %s', rt.engine.mode,
+                     {k: body[k] for k in ('color', 'fixture', 'pattern', 'rate') if k in body})
         return jsonify(rt.engine.snapshot())
 
     @app.post('/admin/api/rebalance')

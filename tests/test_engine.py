@@ -67,6 +67,40 @@ def test_override_modes(eng):
         e.set_mode('disco')
 
 
+def test_manual_colour_per_fixture_starts_from_current_look(eng):
+    e, out = eng
+    e.on_frame(lv(10, 20, 30, 40, 50, 60), True)
+    e.set_mode('color', b'\xff\x00\x00', fixture=2)
+    assert out[-1] == [bytes((10, 20, 30)), b'\xff\x00\x00']
+    e.set_mode('color', b'\x00\x00\xff')                  # no fixture: all of them
+    assert out[-1] == [b'\x00\x00\xff'] * 2
+    with pytest.raises(ValueError):
+        e.set_mode('color', b'\x00\x00\x00', fixture=3)
+    e.on_frame(lv(1, 1, 1), True)                            # the console does not override a test
+    assert out[-1] == [b'\x00\x00\xff'] * 2
+
+
+def test_patterns():
+    w, b = b'\xff\xff\xff', engine.BLACK
+    assert engine.pattern_colors('chase', w, 2, 3, 0.0) == [w, b, b]
+    assert engine.pattern_colors('chase', w, 2, 3, 0.6) == [b, w, b]
+    assert engine.pattern_colors('flash', w, 1, 2, 0.1) == [w, w]
+    assert engine.pattern_colors('flash', w, 1, 2, 0.6) == [b, b]
+    assert len(set(engine.pattern_colors('rainbow', w, 1, 3, 0.2))) == 3
+
+
+def test_pattern_mode_runs_on_the_ticker(eng):
+    e, out = eng
+    e.set_mode('pattern', b'\xff\xff\xff', pattern='flash', rate=1)
+    first = out[-1]
+    e._compute(e._pattern_t0 + 0.6)
+    assert first == [b'\xff\xff\xff'] * 2 and out[-1] == [engine.BLACK] * 2
+    with pytest.raises(ValueError):
+        e.set_mode('pattern', pattern='strobe')
+    with pytest.raises(ValueError):
+        e.set_mode('pattern', rate=100)
+
+
 def test_settings_reject_overflow(env):
     with pytest.raises(ValueError, match='past 512'):
         settings.save({'fixtures': 100, 'bit_depth': 16, 'start_address': 1})

@@ -1,4 +1,4 @@
-from sacn_sender import packet
+from sacn_packets import packet
 
 from server import sacn
 

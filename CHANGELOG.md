@@ -5,6 +5,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/). Every change
 ships as its own version: the top section always matches `VERSION`.
 
+## [0.2.0] - 2026-10-28
+
+### Removed
+- **`tools/sacn_sender.py`**, and the load test's `--sacn` option: no
+  sACN transmitter anywhere in PhoneLight, so a test can never become a
+  rogue source on the show network. The tests' packet builder now lives in
+  `tests/sacn_packets.py` and only targets the test server on 127.0.0.1.
+
+### Added
+- **Test tools** on the admin Live page, made inside the engine and sent
+  only to the phones: **manual colour** (all fixtures, or click a fixture to
+  set just that one; starts from the current look) and **patterns** (chase,
+  flash, rainbow; colour and rate). The header shows TEST while active.
+  API: `POST /admin/api/mode` takes `fixture`, `pattern`, `rate`.
+- `tools/load_test.py --drive`: changes the colour through the admin test
+  API and measures end-to-end delay and sync spread (puts the show back on
+  Live sACN when done).
+
+### Changed
+- "Solid colour" is now the Test tools' manual colour.
+
+Redeploy the server: `cd ~/PhoneLight && git pull && sudo systemctl restart phonelight`.
+
 ## [0.1.0] - 2026-10-28
 
 ### Added

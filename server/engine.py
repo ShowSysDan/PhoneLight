@@ -2,15 +2,17 @@
 
 Called straight from the sACN reader on every accepted packet (no queue, no
 extra hop), so a console change reaches the WebSocket senders in the same
-pass. A 30 Hz ticker only runs the signal-loss hold/fade, which no packet
-drives.
+pass. A 40 Hz ticker runs what no packet drives: the signal-loss
+hold/fade and the test patterns.
 
 Modes (admin Live page, in memory only, back to 'sacn' on restart):
   sacn      the console (with the loss hold/fade)
-  color     one colour on every fixture (test / override)
+  color     manual colours: one for all fixtures, or set fixture by fixture
+  pattern   a test pattern made here (chase / flash / rainbow)
   identify  each fixture a different hue, to check groups
   blackout  black
-The master dimmer scales every mode.
+The master dimmer scales every mode. The test modes are generated inside
+the engine: PhoneLight never transmits sACN.
 """
 import colorsys
 import threading
@@ -18,8 +20,9 @@ import time
 
 from . import settings
 
-MODES = ('sacn', 'color', 'identify', 'blackout')
-TICK = 1 / 30
+MODES = ('sacn', 'color', 'pattern', 'identify', 'blackout')
+PATTERNS = ('chase', 'flash', 'rainbow')
+TICK = 1 / 40
 BLACK = b'\x00\x00\x00'
 
 
@@ -43,6 +46,17 @@ def identify_colors(n):
     return [bytes(round(c * 255) for c in colorsys.hsv_to_rgb((i * 0.618034) % 1, 1, 1)) for i in range(n)]
 
 
+def pattern_colors(pattern, color, rate, n, t):
+    """Test pattern at t seconds. rate: steps (chase), flashes (flash) or
+    colour-wheel turns (rainbow) per second."""
+    if pattern == 'chase':
+        on = int(t * rate) % n
+        return [color if i == on else BLACK for i in range(n)]
+    if pattern == 'flash':
+        return [color if int(t * rate * 2) % 2 == 0 else BLACK] * n
+    return [bytes(round(c * 255) for c in colorsys.hsv_to_rgb((t * rate + i / n) % 1, 1, 1)) for i in range(n)]
+
+
 def scale(colors, factor):
     if factor >= 1:
         return colors
@@ -58,8 +72,11 @@ class Engine:
         self.lost_at = None             # monotonic time the signal was lost
         self.ever_live = False
         self.mode = 'sacn'
-        self.override = BLACK
+        self.manual = []                # 'color' mode: one colour per fixture
+        self.pattern, self.pattern_color, self.pattern_rate = 'chase', b'\xff\xff\xff', 2.0
+        self._pattern_t0 = time.monotonic()
         self.output = []
+        self._raw = []                  # output before the master dimmer
         self.frames = 0                 # frames published (changed output)
         self._fps, self._fps_at, self._fps_n = 0.0, time.monotonic(), 0
         self._stop = False
@@ -77,13 +94,36 @@ class Engine:
                 self._compute()
             # not live: the ticker runs the hold / fade from the last look
 
-    def set_mode(self, mode, color=None):
+    def set_mode(self, mode, color=None, fixture=None, pattern=None, rate=None):
+        """color mode: `color` on every fixture, or only on `fixture` (1-based;
+        the others keep what they show now). pattern mode: `pattern`, `color`,
+        `rate` (each optional, the last ones are kept)."""
         if mode not in MODES:
             raise ValueError(f'unknown mode {mode!r}')
+        if pattern is not None and pattern not in PATTERNS:
+            raise ValueError(f'unknown pattern {pattern!r}')
+        if rate is not None and not 0.05 <= rate <= 20:
+            raise ValueError('rate must be 0.05–20 per second')
+        n = settings.current()['fixtures']
+        if fixture is not None and not 1 <= fixture <= n:
+            raise ValueError(f'fixture must be 1–{n}')
         with self.lock:
+            if mode == 'color':
+                if self.mode != 'color':
+                    self.manual = list(self._raw)       # start from what the phones show now
+                self.manual = (self.manual + [BLACK] * n)[:n]
+                if color is not None:
+                    if fixture is None:
+                        self.manual = [color] * n
+                    else:
+                        self.manual[fixture - 1] = color
+            elif mode == 'pattern':
+                self.pattern = pattern or self.pattern
+                self.pattern_color = color or self.pattern_color
+                self.pattern_rate = rate or self.pattern_rate
+                if self.mode != 'pattern':
+                    self._pattern_t0 = time.monotonic()
             self.mode = mode
-            if color is not None:
-                self.override = bytes(color[:3])
             self._compute()
 
     def recompute(self, *_):
@@ -120,11 +160,15 @@ class Engine:
         if self.mode == 'blackout':
             colors, factor = [BLACK] * n, 1.0
         elif self.mode == 'color':
-            colors, factor = [self.override] * n, 1.0
+            colors, factor = (self.manual + [BLACK] * n)[:n], 1.0
+        elif self.mode == 'pattern':
+            colors, factor = pattern_colors(self.pattern, self.pattern_color, self.pattern_rate, n,
+                                            now - self._pattern_t0), 1.0
         elif self.mode == 'identify':
             colors, factor = identify_colors(n), 1.0
         else:
             colors, factor = fixture_colors(self.levels, v), self._loss_factor(v, now)
+        self._raw = colors
         colors = scale(colors, factor * v['master'] / 100)
         if colors != self.output:
             self.output = colors
@@ -147,12 +191,13 @@ class Engine:
             now = time.monotonic()
             if now - self._fps_at >= 1:
                 self._fps, self._fps_at, self._fps_n = self._fps_n / (now - self._fps_at), now, 0
-            if not self.live and self.mode == 'sacn' and self.lost_at is not None:
+            if self.mode == 'pattern' or (not self.live and self.mode == 'sacn' and self.lost_at is not None):
                 with self.lock:
-                    if not self.live:
+                    if self.mode == 'pattern' or not self.live:
                         self._compute(now)
 
     def snapshot(self):
-        return dict(mode=self.mode, override='#' + self.override.hex(), signal=self.signal(),
+        return dict(mode=self.mode, pattern=self.pattern, pattern_color='#' + self.pattern_color.hex(),
+                    pattern_rate=self.pattern_rate, signal=self.signal(),
                     fps=self.fps(), frames=self.frames,
                     fixtures=['#' + c.hex() for c in self.output])

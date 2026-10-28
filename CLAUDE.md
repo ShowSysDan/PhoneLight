@@ -33,7 +33,7 @@ goes ahead). README.md has the design, install and performance figures.
   capped (sources expire, other universes pruned, guests removed on leave,
   tracker queue capped, admin guest list capped). Check memory with
   `tools/load_test.py` churn when touching this.
-- After a hot-path change run `tools/load_test.py ... -n 1000 --sacn` (split
+- After a hot-path change run `tools/load_test.py ... -n 1000 --drive` (split
   across processes) and compare with README → Performance.
 
 ## Sync
@@ -41,7 +41,14 @@ goes ahead). README.md has the design, install and performance figures.
   2^32); phones convert with their NTP-style offset ('s' messages) and paint
   on requestAnimationFrame. Never stamp per guest (one frame per fixture).
   The sync reply's t2 is stamped as it is sent (`next_message`), so sync
-  replies go first. `tools/load_test.py --sacn` prints the sync spread.
+  replies go first. `tools/load_test.py --drive` prints the sync spread.
+
+## Never transmit sACN
+- PhoneLight only RECEIVES sACN. No sACN sender anywhere in the repo (no
+  tool, no test pattern over UDP): the user does not want a rogue source on
+  the show network. Test colours are made inside the engine (`color` /
+  `pattern` modes, admin Live page). The E1.31 builder in
+  `tests/sacn_packets.py` is for the tests only, to the test server on 127.0.0.1.
 
 ## Guest page (server/templates/guest.html)
 - Stays one small inline file (no frameworks, no external requests except

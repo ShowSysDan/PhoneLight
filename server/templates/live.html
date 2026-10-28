@@ -13,10 +13,29 @@
   <div class="row">
     <button data-mode="sacn">Live sACN</button>
     <button data-mode="identify" title="Each fixture a different colour: check the groups">Identify</button>
-    <input type="color" id="override" value="#ffffff" title="Override colour">
-    <button data-mode="color" title="Send this colour to every phone">Solid colour</button>
     <button data-mode="blackout" class="danger">Blackout</button>
     <button id="rebalance" title="Deal every phone out again, evenly">Rebalance groups</button>
+  </div>
+</div>
+
+<div class="section-header">
+  <div class="section-title">Test tools</div>
+  <span class="dim small">Made inside PhoneLight and sent only to the phones. Nothing is transmitted as sACN.</span>
+</div>
+<div class="card">
+  <div class="row">
+    <b style="min-width:120px">Manual colour</b>
+    <input type="color" id="manual" value="#ffffff" title="Colour">
+    <button data-mode="color" id="all">All fixtures</button>
+    <span class="dim small">or click a fixture below to give it this colour</span>
+  </div>
+  <div class="row" style="margin-top:12px">
+    <b style="min-width:120px">Pattern</b>
+    <select id="pattern"><option value="chase">Chase</option><option value="flash">Flash</option><option value="rainbow">Rainbow</option></select>
+    <input type="color" id="pcolor" value="#ffffff" title="Chase / flash colour">
+    <label class="dim small">rate <input type="number" id="rate" value="2" min="0.05" max="20" step="0.05" style="width:80px"> /s</label>
+    <button data-mode="pattern" id="run">Run pattern</button>
+    <span class="dim small">a flash pattern is the easiest way to check phones are in sync</span>
   </div>
 </div>
 <div class="msg" id="msg"></div>
@@ -63,13 +82,25 @@
     setText($('s-connects'), `${d.guests.total_connects} connects since start`);
   });
   const msg = (t, ok) => { $('msg').className = 'msg ' + (ok ? 'ok' : 'bad'); $('msg').textContent = t; };
-  document.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () =>
-    api('/admin/api/mode', { mode: b.dataset.mode, color: b.dataset.mode === 'color' ? $('override').value : undefined })
-      .then(() => msg('', true), (e) => msg(e.message)));
-  $('override').oninput = () => {
-    if (document.querySelector('[data-mode="color"]').classList.contains('on'))
-      api('/admin/api/mode', { mode: 'color', color: $('override').value }).catch((e) => msg(e.message));
+  const send = (body) => api('/admin/api/mode', body).then(() => msg('', true), (e) => msg(e.message));
+  const pattern = () => ({ mode: 'pattern', pattern: $('pattern').value, color: $('pcolor').value, rate: +$('rate').value });
+  const isOn = (mode) => document.querySelector(`[data-mode="${mode}"]`).classList.contains('on');
+  document.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () => {
+    const mode = b.dataset.mode;
+    send(mode === 'color' ? { mode, color: $('manual').value } : mode === 'pattern' ? pattern() : { mode });
+  });
+  let lastFixture = null;               // the picker follows the last fixture clicked, or all
+  $('manual').oninput = () => {
+    if (isOn('color')) send({ mode: 'color', color: $('manual').value, fixture: lastFixture ?? undefined });
   };
+  $('fixtures').onclick = (e) => {
+    const el = e.target.closest('.fx');
+    if (!el) return;
+    lastFixture = [...$('fixtures').children].indexOf(el) + 1;
+    send({ mode: 'color', fixture: lastFixture, color: $('manual').value });
+  };
+  $('all').addEventListener('click', () => { lastFixture = null; });
+  ['pattern', 'pcolor', 'rate'].forEach((id) => $(id).onchange = () => { if (isOn('pattern')) send(pattern()); });
   $('rebalance').onclick = () => api('/admin/api/rebalance', {}).then((r) => msg(`Rebalanced: ${r.counts.join(' / ')}`, true), (e) => msg(e.message));
 })();
 </script>
