@@ -85,7 +85,7 @@ def receive_color(ws, want, timeout=3):
 
 def test_pages(server):
     status, body = get(server, '/')
-    assert status == 200 and b'/ws' in body and len(body) < 8000
+    assert status == 200 and b'/ws' in body and len(body) < 10000
     for path in ('/admin', '/admin/sacn', '/admin/clients', '/admin/settings', '/static/keepawake.mp4'):
         assert get(server, path)[0] == 200
 

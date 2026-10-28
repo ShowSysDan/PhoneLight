@@ -77,6 +77,7 @@ class Engine:
         self._pattern_t0 = time.monotonic()
         self.output = []
         self._raw = []                  # output before the master dimmer
+        self.lit = []                   # per fixture: had any sACN level since the signal came (patch check)
         self.frames = 0                 # frames published (changed output)
         self._fps, self._fps_at, self._fps_n = 0.0, time.monotonic(), 0
         self._stop = False
@@ -86,6 +87,8 @@ class Engine:
         with self.lock:
             self.levels = levels
             if live:
+                if not self.live:
+                    self.lit = []               # a new signal: check the patch afresh
                 self.ever_live, self.lost_at = True, None
             elif self.live:
                 self.lost_at = time.monotonic()
@@ -168,6 +171,9 @@ class Engine:
             colors, factor = identify_colors(n), 1.0
         else:
             colors, factor = fixture_colors(self.levels, v), self._loss_factor(v, now)
+            if self.live:
+                lit = (self.lit + [False] * n)[:n]
+                self.lit = [was or rgb != BLACK for was, rgb in zip(lit, colors)]
         self._raw = colors
         colors = scale(colors, factor * v['master'] / 100)
         if colors != self.output:
@@ -200,4 +206,6 @@ class Engine:
         return dict(mode=self.mode, pattern=self.pattern, pattern_color='#' + self.pattern_color.hex(),
                     pattern_rate=self.pattern_rate, signal=self.signal(),
                     fps=self.fps(), frames=self.frames,
-                    fixtures=['#' + c.hex() for c in self.output])
+                    fixtures=['#' + c.hex() for c in self.output],
+                    # fixtures whose channels have stayed at 0 since sACN came (1-based; only while live)
+                    unlit=[i + 1 for i, was in enumerate(self.lit) if not was] if self.live else [])

@@ -66,6 +66,16 @@ goes ahead). README.md has the design, install and performance figures.
 - Start-screen glow is CSS only (one hue-rotate animation); no JS timers or
   images for decoration, and keep the reduced-motion rule.
 
+## Gateway (gateway/: Caddy on the VPS, shared with 321T)
+- Shared-Caddy convention: main Caddyfile = global options + `import
+  /etc/caddy/sites.d/*.caddy`; glow writes ONLY `sites.d/glow-lighting.caddy`.
+  Never rewrite the main Caddyfile wholesale, never touch another app's site,
+  validate the whole config before reloading and restore on failure, never
+  start a stopped Caddy. docs/321theater/ is the same contract for 321T.
+- Debian's Caddy is 2.6: no `stream_close_delay` (only added for >= 2.7).
+  Test changes against a real `caddy validate` (the cloud sandbox can
+  `apt-get install caddy`), including next to 321T's Caddyfile.example.
+
 ## Database (SQLite now, PostgreSQL later)
 - Migrations: a NEW `server/migrations/NNNN_name.sql` per change; never edit
   one that has been pushed (checksummed). Applied by start.sh and create_app.

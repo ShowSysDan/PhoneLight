@@ -107,3 +107,16 @@ def test_settings_reject_overflow(env):
     with pytest.raises(ValueError):
         settings.save({'bit_depth': 12})
     assert settings.save({'fixtures': 85, 'bit_depth': 16, 'start_address': 1})['fixtures'] == 85
+
+
+def test_unlit_fixtures_flag_a_patch_problem(eng):
+    e, out = eng                                             # 2 fixtures, 8-bit from address 1
+    e.on_frame(lv(255, 0, 0), True)                          # only fixture 1 gets levels
+    assert e.snapshot()['unlit'] == [2]
+    e.on_frame(lv(255, 0, 0, 0, 0, 9), True)                 # fixture 2 lit once: no longer flagged
+    e.on_frame(lv(255, 0, 0), True)
+    assert e.snapshot()['unlit'] == []
+    e.on_frame(lv(255, 0, 0), False)                         # signal lost: nothing to flag
+    assert e.snapshot()['unlit'] == []
+    e.on_frame(lv(255, 0, 0), True)                          # a new signal: checked afresh
+    assert e.snapshot()['unlit'] == [2]

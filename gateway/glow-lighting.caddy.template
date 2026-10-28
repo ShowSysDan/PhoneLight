@@ -1,0 +1,35 @@
+# glow.lighting public site. Managed by PhoneLight's gateway/install.sh:
+# this file is rewritten on every run. Change /etc/glow-gateway.env and re-run
+# `sudo bash install.sh` instead of editing it here.
+#
+# Shared Caddy: this is ONE file in /etc/caddy/sites.d/; other apps on this
+# server (e.g. 321T's dpc.321.theater) keep their own site blocks untouched.
+
+@@SITE@@ {
+	# The admin is never public: use it on the building network
+	# (http://<glow server>:5420/admin).
+	@admin path /admin /admin/* /ws/admin
+	handle @admin {
+		respond 404
+	}
+
+	# Everything else (the guest page and its WebSocket) goes to the glow server.
+	# Caddy passes WebSockets through and sets X-Forwarded-For / -Proto (glow
+	# reads them with TRUST_PROXY=1 in its .env).
+	handle {
+		reverse_proxy @@UPSTREAM@@@@STREAM@@
+	}
+
+	# Glow server or tunnel down: a small page that retries by itself instead
+	# of a blank 502. (The guest page already reconnects on its own.)
+	handle_errors {
+		@down expression `{err.status_code} in [502, 503, 504]`
+		handle @down {
+			header Cache-Control "no-store"
+			header Retry-After "15"
+			header Content-Type "text/html; charset=utf-8"
+			respond `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="15"><title>glow.lighting</title><body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#000;color:#fff;font:18px system-ui,sans-serif;text-align:center"><div><b style="font-size:32px">glow.lighting</b><p>Getting ready&hellip; this page will try again by itself.</p></div>` 503
+		}
+	}
+}
+@@WWW@@

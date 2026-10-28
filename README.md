@@ -1,6 +1,6 @@
 # glow.lighting
 
-Version **0.4.0** · see [CHANGELOG.md](CHANGELOG.md)
+Version **0.5.0** · see [CHANGELOG.md](CHANGELOG.md)
 
 > **glow.lighting** is the product name: it is what guests and the admin
 > see. The code name **PhoneLight** stays for the repo, the folder
@@ -28,6 +28,7 @@ the crowd like any other RGB fixtures.
 - [Performance](#performance)
 - [What is logged about guests](#what-is-logged-about-guests)
 - [Configuration (.env)](#configuration-env)
+- [Public access: the gateway (HTTPS, glow.lighting)](#public-access-the-gateway-https-glowlighting)
 - [Updating, logs, backups, uninstall](#updating-logs-backups-uninstall)
 - [Development](#development)
 - [Moving to PostgreSQL](#moving-to-postgresql)
@@ -56,7 +57,7 @@ the crowd like any other RGB fixtures.
              phone            phone            phone    … (full-screen colour)
 ```
 
-- **Guest page** (`/`): one ~7 KB HTML file, no frameworks, no external
+- **Guest page** (`/`): one ~9 KB HTML file, no frameworks, no external
   files. A **glow.lighting** start screen whose wordmark and button glow
   with a halo that cycles through the colour wheel (pure CSS, one animated
   filter; still for guests whose phone asks for reduced motion). Tap to start → full screen, screen kept awake, WebSocket opened.
@@ -199,13 +200,19 @@ same priority to merge them HTP.
 
 | Page | What it shows / does |
 |---|---|
-| **Live** | Phones connected, average round-trip latency, output frames/s, sACN rate; a live swatch per fixture with its phone count. Output buttons: **Live sACN**, **Identify** (every fixture a different colour, to check groups), **Blackout**, **Rebalance groups**. **Test tools:** manual colour (all fixtures, or click one fixture) and patterns (chase / flash / rainbow); see [Testing without a console](#testing-without-a-console). Overrides and tests are not saved: a restart goes back to Live sACN. |
+| **Live** | Phones connected, average round-trip latency, output frames/s, sACN rate; a live swatch per fixture with its phone count. Output buttons: **Live sACN**, **Identify** (every fixture a different colour, to check groups), **Blackout**, **Rebalance groups**. A **warning** appears when phones sit in a fixture group whose channels have stayed at 0 since sACN started: almost always a patch problem (the group isn't in the cue). **Test tools:** manual colour (all fixtures, or click one fixture) and patterns (chase / flash / rainbow); see [Testing without a console](#testing-without-a-console). Overrides and tests are not saved: a restart goes back to Live sACN. |
 | **sACN monitor** | Listening address, packet counts, every source (name, IP, priority, fps, out-of-order packets, CID), the 512 levels (fixture channels outlined R/G/B; hover a cell for fixture and colour). **Timing** (see [Finding a delay](#finding-a-delay)): how long packets waited before the app read them, how long the app took to hand the colours to the phones, and stale packets skipped. |
 | **Clients** | Phones connected now (fixture, IP, device, OS, browser, connected time, last and average latency). Client log: every browser seen, visits, total time, average latency, device details; click one for its sessions. *Clear log* deletes the history. |
 | **Settings** | Universe, start address, fixtures, 8/16-bit, master dimmer, sync delay, signal-loss hold and fade, how long client data is kept. Applied live, no restart. |
 
 The header always shows the sACN state, how many phones are connected and,
 in amber, any active override.
+
+**On a phone:** long-press anywhere on the colour (0.7 s) for a status
+readout that disappears after 6 s: its fixture, connected or reconnecting,
+round trip, sync accuracy, frames per second, current colour and the first
+characters of its client id (to find it on the Clients page). Handy for
+checking a phone in the crowd without the admin.
 
 ## Testing without a console
 
@@ -350,10 +357,24 @@ editing: `sudo systemctl restart phonelight`.
 | `SACN_PORT` | 5568 | sACN UDP port |
 | `DB_PATH` | data/phonelight.db | SQLite file (relative = inside the app directory) |
 | `MAX_CONNECTIONS` | 4000 | Open sockets the server accepts |
-| `TRUST_PROXY` | off | Set 1 only behind a reverse proxy (HTTPS later) |
+| `TRUST_PROXY` | off | Set 1 only behind the gateway / a reverse proxy (see [the gateway](#public-access-the-gateway-https-glowlighting)) |
 | `ACCESS_LOG` | off | 1 = log every HTTP request |
 
 Show settings are on the admin Settings page (stored in the database).
+
+## Public access: the gateway (HTTPS, glow.lighting)
+
+To put glow.lighting on the internet at `https://glow.lighting`, run
+`gateway/install.sh` on the gateway server (the VPS that already serves
+321T's `dpc.321.theater`). It adds a glow.lighting site to the **shared Caddy**
+there without touching 321T's site, keeps the admin off the internet, and
+validates before reloading. Step-by-step: **[gateway/README.md](gateway/README.md)**.
+
+For the 321T team, so that their installer shares Caddy the same way:
+**[docs/321theater/SHARED_CADDY.md](docs/321theater/SHARED_CADDY.md)** (guide +
+a tested patch for their `gateway/install.sh`).
+
+On the glow server, set `TRUST_PROXY=1` in `.env` once it is behind the gateway.
 
 ## Updating, logs, backups, uninstall
 
@@ -441,4 +462,8 @@ The guest path never touches the database, so nothing on it changes.
 - **iPhone full screen.** iOS Safari has no full-screen API for pages; the
   address bar stays unless the guest adds the page to the home screen. The
   colour still fills the page.
-- **No admin sign-in** yet: use `ADMIN_ALLOW`.
+- **No admin sign-in** yet: use `ADMIN_ALLOW`. Through the gateway the admin
+  is not reachable at all (404).
+- **Caddy 2.6 reloads drop phones.** On the gateway, Debian's Caddy closes
+  WebSockets on every reload (phones reconnect in seconds); Caddy 2.7+ keeps
+  them (see gateway/README.md).

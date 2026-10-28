@@ -5,6 +5,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/). Every change
 ships as its own version: the top section always matches `VERSION`.
 
+## [0.5.0] - 2026-10-28
+
+### Added
+- **Public gateway installer** (`gateway/install.sh`, guide in
+  `gateway/README.md`): puts `https://glow.lighting` on the gateway VPS's
+  **shared Caddy** next to 321T's `dpc.321.theater`. Finds Caddy (or installs
+  Debian's), adds `import /etc/caddy/sites.d/*.caddy` to the main Caddyfile if
+  missing and changes nothing else there, writes only
+  `/etc/caddy/sites.d/glow-lighting.caddy`, validates the whole config before
+  a graceful reload and restores its files if Caddy rejects them, never starts
+  a stopped Caddy (it may be off on purpose). The site proxies the guest page
+  and WebSocket, answers 404 for the admin, redirects `www.`, and shows a
+  self-retrying "getting ready" page when the glow server is down. Tested
+  against Caddy 2.6.2 alongside 321T's real Caddyfile.
+- **Guide + tested patch for the 321T team** (`docs/321theater/`), so their
+  gateway installer follows the same convention: their site moves (word for
+  word) to `/etc/caddy/sites.d/321theater.caddy`, `--rewrite-caddy` only
+  regenerates that file, and a rejected config is rolled back.
+- **Patch warning on the Live page:** phones in a fixture group whose
+  channels have stayed at 0 since sACN started ("Fixture 2 has 1 phone, but
+  its channels 4–6 have stayed at 0…").
+- **Phone status readout:** long-press the colour on a phone for its fixture,
+  connection, round trip, sync accuracy, frames/s, colour and client id.
+
+Redeploy the server: `cd ~/PhoneLight && git pull && sudo systemctl restart phonelight`.
+The gateway is new: install it on the VPS with `gateway/README.md`.
+
 ## [0.4.0] - 2026-10-28
 
 ### Added
