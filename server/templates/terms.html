@@ -18,45 +18,35 @@ a{color:#fff}
 </style>
 </head><body><main>
 <h1>Terms &amp; privacy</h1>
-<p>glow.lighting turns your phone into one light in the show. This page explains what it does and what you agree to
-when you tap <b>Tap to start</b>.</p>
+<p>glow.lighting makes your phone one light in the show. Tapping <b>Tap to start</b> means you agree to this page.</p>
 
-<div class="warn"><b>Flashing lights.</b> The show can flash and change colour quickly, on your screen and on
-the phones around you. If you have photosensitive epilepsy or are sensitive to flashing light, please don't take
-part, and look away from the screens.</div>
+<div class="warn"><b>Flashing lights.</b> Screens and flashes around you can flash and change colour quickly. If you
+have photosensitive epilepsy or are sensitive to flashing light, please don't take part, and look away.</div>
 
 <h2>What the page does</h2>
-<ul>
-<li>Shows colours full screen, sent live from the show's lighting desk, and keeps your screen awake while it is open.</li>
-<li>If your phone supports it and you allow it, switches your <b>camera flash</b> on and off with the show.</li>
-<li>Nothing is installed. Close the page, or switch to another app, and it all stops.</li>
-</ul>
+<p>It shows colours full screen, sent live from the lighting desk, and keeps your screen awake. If your phone can and
+you allow it, it also switches your <b>camera flash</b> with the show. Nothing is installed: close the page or switch
+apps and it all stops.</p>
 
-<h2>The camera permission</h2>
-<p>Web pages can only reach the flash through the camera, so your phone asks to let the page use the camera.
-Tap <b>Allow</b> to have your flash join the show. The camera is used <b>only</b> to switch the flash: no photo or
-video is ever taken, looked at, stored or sent anywhere. Your phone shows that the camera is in use while the
-page is open. Tap <b>Don't allow</b> and the show still works on your screen. You can change your mind in your
-browser's site settings.</p>
+<h2>The camera</h2>
+<p>A web page can only reach the flash through the camera, so your phone asks first. The camera is used <b>only</b> to
+switch the flash: no photo or video is taken, viewed, stored or sent, though your phone shows the camera as in use.
+<b>Don't allow</b> still gives you the screen; you can change it in your browser's site settings.</p>
 
 <h2>What is logged</h2>
-<p>To run the show, the server logs basic technical details: a random id this page keeps on your phone (so we know
-when a phone comes back), your IP address, browser and device type, screen size, language, time zone, how long you are connected and the network delay. We do not ask for your name, contacts, location,
-photos or anything personal, and the page has no ads or trackers. These details are used only to run and improve
-the show, and are {% if retention_days %}deleted after {{ retention_days }} days{% else %}kept until the show's crew
-clears them{% endif %}.</p>
+<p>A random id kept on your phone, your IP address, browser and device type, screen size, language, time zone,
+connection time and network delay. No name, contacts, location or photos; no ads or trackers. Used only to run and
+improve the show, and {% if retention_days %}deleted after {{ retention_days }} days{% else %}kept until the crew
+clears it{% endif %}.</p>
 
 <h2>Be considerate</h2>
-<ul>
-<li>Don't point your flash into people's eyes, at the performers, or at the stage.</li>
-<li>Follow the venue's rules and staff; they may ask you to stop at any time.</li>
-<li>Keep an eye on your surroundings and your belongings.</li>
-</ul>
+<p>Don't point your flash at people's eyes, the performers or the stage. Follow venue staff, who may ask you to stop
+at any time, and mind your surroundings and belongings.</p>
 
 <h2>Your phone</h2>
-<p>A bright screen and the flash use battery and can make the phone warm. {% if flash_max %}The flash switches itself off
-after {{ flash_max|round|int }} seconds on. {% endif %}Stop whenever you like. Taking part is optional and at your own discretion: the show is provided as is, and we
-are not responsible for your phone, its battery, its data use, or for the show working on every device.</p>
+<p>The screen and flash use battery and can make your phone warm{% if flash_max %}; the flash switches itself off
+after {{ flash_max|round|int }} seconds on{% endif %}. Taking part is optional and you can stop any time. The show is
+provided as is: we are not responsible for your phone, its battery or data use, or for it working on every device.</p>
 
 <a class="back" href="/">Back to the show</a>
 </main></body></html>

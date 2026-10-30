@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/). Every change
 ships as its own version: the top section always matches `VERSION`.
 
+## [0.10.2] - 2026-10-30
+
+### Changed
+- **Terms & privacy page** shortened (about a quarter fewer words): same
+  content (flashing-lights warning, camera use, what is logged and for how
+  long, being considerate, battery and "as is"), tighter wording, lists
+  folded into short paragraphs.
+
 ## [0.10.1] - 2026-10-30
 
 ### Fixed
