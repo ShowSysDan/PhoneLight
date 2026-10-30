@@ -61,7 +61,7 @@ RGB, like a pixel bar.
              phone            phone            phone    … (full-screen colour)
 ```
 
-- **Guest page** (`/`): one ~12 KB HTML file, no frameworks, no external
+- **Guest page** (`/`): one ~13 KB HTML file, no frameworks, no external
   files. A **glow.lighting** start screen whose wordmark and button glow
   with a halo that cycles through the colour wheel (pure CSS, one animated
   filter; for guests whose phone asks for reduced motion it still changes colour,
@@ -311,7 +311,11 @@ pattern). Run it from a second machine to include the real network.
 Phones can switch their **camera flash** with the show as well as their
 screen. Turn on *Phone flash* in Settings: every fixture then has one more
 channel, after its colour channels, and 128 or more turns its phones'
-flashes on. It is on/off only (no browser can dim a flash).
+flashes on. It is on/off only: phones can dim their torch, but browsers
+don't let a web page set the level (only on or off), and faking it by
+switching the torch fast would just strobe (each switch takes tens to
+hundreds of ms). For a softer look, use short pulses or leave dimming to
+the screen colour.
 
 How it works: a web page can only reach the flash through a live camera, so
 when the show uses the flash the page opens the rear camera (after the
@@ -325,10 +329,19 @@ phone whose flash is ready; the Live page counts them.
 - **HTTPS only.** Browsers give a page the camera only over HTTPS, so phones
   that join through the gateway (glow.lighting) get the flash; phones on the
   plain `http://server:5420` address just don't offer it.
-- **Which phones.** Chrome on Android, on most phones. iPhones: Safari's
-  support for this is new and patchy, so the page only asks where the
-  browser says it can, and drops it if the camera has no torch. Try your
-  own phones before relying on it.
+- **Which phones.** iPhones (recent iOS Safari) and Chrome on Android. The
+  page only asks where the browser says it can. Many Android phones have
+  several rear cameras and only the main one has the torch, and Chrome
+  often reports the torch only once the camera is running: so the page
+  wakes the camera first and, if it still has no torch, tries each other
+  rear camera in turn (no extra prompt). Firefox on Android can't switch a
+  torch at all. Try your own phones before relying on it.
+- **A phone that won't flash:** long-press its screen; the readout's
+  *flash* line says why: *not on this phone* (browser can't), *no camera
+  has one* (every rear camera tried, none offers a torch), *not allowed*
+  (the guest refused the camera: reload the page, or allow the camera in
+  the browser's site settings), *off (time limit)*. The Clients page shows
+  ⚡ and the browser for each phone.
 - **Slower than the screen.** Switching a torch takes tens to a few hundred
   ms depending on the phone. The flash keeps the frame's show-at time, but
   expect a looser sync than the colours: use it for hits and slow pulses,
