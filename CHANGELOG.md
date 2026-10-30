@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/). Every change
 ships as its own version: the top section always matches `VERSION`.
 
+## [0.10.1] - 2026-10-30
+
+### Fixed
+- **Phone flash on Android.** Many Android phones have several rear cameras
+  and only the main one has the torch, and Chrome often reports the torch
+  only once the camera is running, so the page found none and gave up. It
+  now wakes the camera (ImageCapture) before checking and, if that camera
+  still has no torch, tries each other rear camera in turn (front cameras
+  skipped; no extra prompt). The long-press readout says *flash: no camera
+  has one* when none of them offers a torch.
+
 ## [0.10.0] - 2026-10-30
 
 ### Added

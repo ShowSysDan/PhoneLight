@@ -69,17 +69,33 @@ var cells=[],shown=[],ncell=0,per=0,want=0;
 // so while the show uses it the page holds the camera open (never shown, read or sent). The flash goes
 // off by itself after flmax s on (0 = never) until the show turns it off. asked: -1 = refused, don't ask.
 var md=navigator.mediaDevices,canT=!!(md&&md.getUserMedia&&md.getSupportedConstraints&&md.getSupportedConstraints().torch&&navigator.maxTouchPoints);
-var fl=0,flmax=0,trk=null,tOn=false,tAt=0,tCap=false,tWant=false,asked=0,opening=0;
+var fl=0,flmax=0,trk=null,tOn=false,tAt=0,tCap=false,tWant=false,asked=0,opening=0,tNo=0;
 document.getElementById('cam').hidden=!canT;
 function tsay(){if(ws&&ws.readyState==1)ws.send(trk?'t1':'t0')}
+// Android: Chrome may pick a rear lens without a torch (wide / ultra-wide) and may report the torch only
+// once the camera runs (ImageCapture wakes it): wake each rear camera, try them in turn. tNo: none has one.
+function stopAll(st){st&&st.getTracks().forEach(function(x){x.stop()})}
+function hasT(t){return !!(t&&t.getCapabilities&&t.getCapabilities().torch)}
+function wake(t){
+  try{if(t&&!hasT(t)&&window.ImageCapture)return Promise.race([new ImageCapture(t).getPhotoCapabilities().catch(Boolean),
+    new Promise(function(r){setTimeout(r,1500)})])}catch(e){}
+  return Promise.resolve();
+}
+function camTry(st,ids){
+  var t=st&&st.getVideoTracks()[0],no=function(){opening=0;canT=false;tNo=1};
+  wake(t).then(function(){
+    if(!canT||!fl){opening=0;return stopAll(st)}
+    if(hasT(t)){opening=0;trk=t;tOn=false;asked=1;t.onended=function(){if(trk===t){trk=null;tOn=false;tsay()}};tsay();return torch(tWant)}
+    stopAll(st);
+    (ids?Promise.resolve(ids):md.enumerateDevices().then(function(ds){return ds.filter(function(d){
+      return d.kind=='videoinput'&&d.deviceId&&!(t&&t.getSettings().deviceId==d.deviceId)&&!/front|user|selfie/i.test(d.label)}).map(function(d){return d.deviceId})
+    })).then(function(l){var n=l.shift();if(!n)return no();
+      md.getUserMedia({video:{deviceId:{exact:n}},audio:false}).then(function(s){camTry(s,l)},function(){camTry(null,l)})},no);
+  });
+}
 function camOpen(){
   if(!canT||!fl||trk||opening||asked<0||document.visibilityState!='visible')return;opening=1;
-  md.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false}).then(function(st){
-    opening=0;var t=st.getVideoTracks()[0],cap=t&&t.getCapabilities?t.getCapabilities():{};
-    if(!t||!cap.torch)canT=false;
-    if(!canT||!fl){st.getTracks().forEach(function(x){x.stop()});return}
-    trk=t;tOn=false;asked=1;t.onended=function(){if(trk===t){trk=null;tOn=false;tsay()}};tsay();torch(tWant);
-  },function(e){opening=0;if(!e||e.name!='NotReadableError')asked=-1});
+  md.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false}).then(camTry,function(e){opening=0;if(!e||e.name!='NotReadableError')asked=-1});
 }
 function camClose(){if(trk){trk.stop();trk=null;tOn=false;tsay()}}
 function torch(want){
@@ -162,7 +178,7 @@ function status(){
   info.textContent='glow.lighting\nfixture '+(fx||'?')+' \u00b7 '+(up?'connected':'reconnecting')+
     '\nround trip '+(b?Math.round(b[0])+' ms':'\u2013')+' \u00b7 sync '+(off===null?'not yet':'\u00b1'+Math.max(1,Math.round(b[0]/2))+' ms')+
     '\n'+fps*2+' frames/s \u00b7 '+shown[0]+(ncell>1?' (cell 1 of '+ncell+')':'')+
-    '\nflash '+(trk?(tOn?'on':tCap?'off (time limit)':'off'):!canT?'not on this phone':!fl?'not used':asked<0?'not allowed':'\u2013')+'\nid '+id.slice(0,8);
+    '\nflash '+(trk?(tOn?'on':tCap?'off (time limit)':'off'):tNo?'no camera has one':!canT?'not on this phone':!fl?'not used':asked<0?'not allowed':'\u2013')+'\nid '+id.slice(0,8);
 }
 function showInfo(){
   clearInterval(infoT);clearTimeout(hideT);fr0=nframes;status();info.hidden=false;infoT=setInterval(status,500);

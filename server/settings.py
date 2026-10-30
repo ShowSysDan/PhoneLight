@@ -29,7 +29,7 @@ DEFS = {
     'flash': dict(label='Phone flash', type=int, choices=(0, 1), names=('Off', 'On'), default=0,
                   help='On: each fixture gets one more channel, after its colour channels: 128 or more turns '
                        'its phones\' camera flash on (on/off only, no dimming). Only phones whose browser can '
-                       '(most Android; iPhone varies) and whose guest allowed the camera. Slower and less '
+                       '(iPhone Safari, Android Chrome) and whose guest allowed the camera. Slower and less '
                        'tightly synced than the screen: use it for hits, not fast chases.'),
     'flash_max': dict(label='Flash longest on (s)', type=float, min=0, max=600, default=10,
                       help='A phone switches its flash off after it has been on this long, until the channel '
