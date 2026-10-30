@@ -257,3 +257,22 @@ def test_max_per_ip_exempt_network():
     h.max_per_ip, h.per_ip_exempt = 1, proxy.networks('198.51.100.0/24')
     for i in range(3):
         assert h.join(Guest(f's{i}', f'client{i:04d}', '198.51.100.20', {})) is not None
+
+
+def test_flash_layout_and_width():
+    """Flash on: the layout message gets its time limit, frames one more byte."""
+    h = Hub(1, flash=10.0)
+    g = guest(1)
+    h.join(g)
+    assert h.next_message(g) == 'f1' and h.next_message(g) == 'l1,1,10'
+    assert h.next_message(g) == frame(bytes(4))
+    h.publish([RED])                             # colours without the flash byte: a stale size, dropped
+    assert h.next_message(g) is None
+    h.publish([RED + b'\xff'])
+    assert h.next_message(g)[2:-4] == RED + b'\xff'
+    h.set_layout(1, 1)                           # flash off again
+    assert h.next_message(g) == 'l1,1' and h.next_message(g) == BLACK
+    h.torch(g, 't1')
+    assert g.torch and h.snapshot()['torch'] == 1 and h.snapshot()['guests'][0]['torch']
+    h.torch(g, 't0')
+    assert not g.torch

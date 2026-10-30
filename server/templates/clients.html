@@ -10,7 +10,7 @@
 
 <div class="section-header"><div class="section-title">Connected now</div><span class="dim small">newest first, up to 500 · <b>Kick</b> disconnects (the phone rejoins by itself), <b>Block</b> keeps it out</span></div>
 <div class="card table-wrap">
-  <table><thead><tr><th>Client</th><th>Fixture</th><th>IP</th><th>Device</th><th>OS</th><th>Browser</th><th>Connected</th><th>Latency</th><th>Avg</th><th></th></tr></thead>
+  <table><thead><tr><th>Client</th><th>Fixture</th><th>IP</th><th>Device</th><th>OS</th><th>Browser</th><th>Connected</th><th>Latency</th><th>Avg</th><th>Flash</th><th></th></tr></thead>
   <tbody id="live"></tbody></table>
 </div>
 <div class="msg" id="msg" style="margin-top:8px"></div>
@@ -60,10 +60,10 @@
     setHTML($('live'), g.guests.length ? g.guests.map((r) => `<tr><td class="mono" title="${esc(r.client_id)}">${short(r.client_id)}</td>` +
       `<td>${r.fixture}</td><td class="mono">${esc(r.ip)}</td><td>${esc(r.device)}</td><td>${esc(r.os)}</td><td>${esc(r.browser)}</td>` +
       `<td class="mono">${duration(r.seconds)}</td><td class="mono">${num(r.latency)} ms</td><td class="mono">${num(r.latency_avg)} ms</td>` +
-      `<td class="nowrap"><button class="small" data-kick="${esc(r.sid)}">Kick</button> ` +
+      `<td>${r.torch ? '⚡ ready' : ''}</td><td class="nowrap"><button class="small" data-kick="${esc(r.sid)}">Kick</button> ` +
       `<button class="small danger" data-block="client" data-value="${esc(r.client_id)}">Block</button> ` +
       `<button class="small danger" data-block="ip" data-value="${esc(r.ip)}" title="Everyone on this IP">Block IP</button></td></tr>`).join('')
-      : '<tr><td colspan="10" class="empty">No phones connected.</td></tr>');
+      : '<tr><td colspan="11" class="empty">No phones connected.</td></tr>');
   });
 
   const msg = (t, ok) => { $('msg').className = 'msg ' + (ok ? 'ok' : 'bad'); $('msg').textContent = t; };

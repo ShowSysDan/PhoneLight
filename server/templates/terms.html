@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Terms &amp; privacy · glow.lighting</title>
+<style>
+html,body{margin:0;background:#000;color:#ddd;font:16px/1.55 system-ui,-apple-system,sans-serif}
+main{max-width:640px;margin:0 auto;padding:28px 20px calc(40px + env(safe-area-inset-bottom))}
+h1{margin:0 0 4px;color:#fff;font-size:28px}
+h2{margin:28px 0 6px;color:#fff;font-size:18px}
+p,li{color:#bbb}
+ul{padding-left:20px}
+b{color:#fff}
+a{color:#fff}
+.warn{margin:20px 0;padding:14px 16px;border:1px solid #ff2bd6;border-radius:12px;color:#fff}
+.back{display:inline-block;margin-top:28px;padding:12px 28px;border-radius:30px;background:#fff;color:#000;font-weight:600;text-decoration:none}
+</style>
+</head><body><main>
+<h1>Terms &amp; privacy</h1>
+<p>glow.lighting turns your phone into one light in the show. This page explains what it does and what you agree to
+when you tap <b>Tap to start</b>.</p>
+
+<div class="warn"><b>Flashing lights.</b> The show can flash and change colour quickly, on your screen and on
+the phones around you. If you have photosensitive epilepsy or are sensitive to flashing light, please don't take
+part, and look away from the screens.</div>
+
+<h2>What the page does</h2>
+<ul>
+<li>Shows colours full screen, sent live from the show's lighting desk, and keeps your screen awake while it is open.</li>
+<li>If your phone supports it and you allow it, switches your <b>camera flash</b> on and off with the show.</li>
+<li>Nothing is installed. Close the page, or switch to another app, and it all stops.</li>
+</ul>
+
+<h2>The camera permission</h2>
+<p>Web pages can only reach the flash through the camera, so your phone asks to let the page use the camera.
+Tap <b>Allow</b> to have your flash join the show. The camera is used <b>only</b> to switch the flash: no photo or
+video is ever taken, looked at, stored or sent anywhere. Your phone shows that the camera is in use while the
+page is open. Tap <b>Don't allow</b> and the show still works on your screen. You can change your mind in your
+browser's site settings.</p>
+
+<h2>What is logged</h2>
+<p>To run the show, the server logs basic technical details: a random id this page keeps on your phone (so we know
+when a phone comes back), your IP address, browser and device type, screen size, language, time zone, how long you are connected and the network delay. We do not ask for your name, contacts, location,
+photos or anything personal, and the page has no ads or trackers. These details are used only to run and improve
+the show, and are {% if retention_days %}deleted after {{ retention_days }} days{% else %}kept until the show's crew
+clears them{% endif %}.</p>
+
+<h2>Be considerate</h2>
+<ul>
+<li>Don't point your flash into people's eyes, at the performers, or at the stage.</li>
+<li>Follow the venue's rules and staff; they may ask you to stop at any time.</li>
+<li>Keep an eye on your surroundings and your belongings.</li>
+</ul>
+
+<h2>Your phone</h2>
+<p>A bright screen and the flash use battery and can make the phone warm. {% if flash_max %}The flash switches itself off
+after {{ flash_max|round|int }} seconds on. {% endif %}Stop whenever you like. Taking part is optional and at your own discretion: the show is provided as is, and we
+are not responsible for your phone, its battery, its data use, or for the show working on every device.</p>
+
+<a class="back" href="/">Back to the show</a>
+</main></body></html>

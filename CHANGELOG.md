@@ -5,6 +5,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/). Every change
 ships as its own version: the top section always matches `VERSION`.
 
+## [0.10.0] - 2026-10-30
+
+### Added
+- **Phone flash.** Phones can switch their camera flash (torch) with the
+  show. Settings → *Phone flash* On gives every fixture one more channel,
+  after its colours: 128+ = flash on. The page opens the rear camera only
+  while the show uses the flash, after the guest taps *Allow* (no frame is
+  read or sent), and only where the browser can switch a torch: Android
+  Chrome, iPhone patchy, HTTPS only (through the gateway). *Flash longest on
+  (s)* (default 10, 0 = no limit) makes a phone switch its flash off by
+  itself, for batteries and heat. Live page: *Flash on / off* test buttons,
+  ⚡ on fixtures whose flash is on, phones with flash ready; the flash
+  pattern flashes the torches too. Clients page: ⚡ per phone.
+- **Terms & privacy page** (`/terms`): flashing-lights warning, the camera
+  permission, what is logged and for how long, being considerate, "as is".
+  The start screen says tapping start agrees to it, and on phones that can
+  use the flash asks the guest to tap *Allow* on the camera prompt. Have it
+  read by the venue's legal team before a public show.
+
+### Changed
+- Wire format: with the flash on, the layout message is
+  `l<cells>,<columns>,<longest-on s>` and frames carry one more byte (255 =
+  on) before the show-at time. Phones send `t1` / `t0` (flash ready / not).
+- Guest page ~12 KB (was ~10 KB).
+
+Redeploy: `cd ~/PhoneLight && git pull && sudo systemctl restart phonelight`.
+
 ## [0.9.0] - 2026-10-28
 
 Security hardening from a full audit of the app and the public gateway.

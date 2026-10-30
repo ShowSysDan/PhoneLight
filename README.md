@@ -26,6 +26,7 @@ RGB, like a pixel bar.
 - [Using the admin](#using-the-admin)
 - [Blocking a device](#blocking-a-device)
 - [Testing without a console](#testing-without-a-console)
+- [Phone flash (camera torch)](#phone-flash-camera-torch)
 - [Keeping phones in sync](#keeping-phones-in-sync)
 - [Finding a delay](#finding-a-delay)
 - [Performance](#performance)
@@ -60,13 +61,17 @@ RGB, like a pixel bar.
              phone            phone            phone    … (full-screen colour)
 ```
 
-- **Guest page** (`/`): one ~10 KB HTML file, no frameworks, no external
+- **Guest page** (`/`): one ~12 KB HTML file, no frameworks, no external
   files. A **glow.lighting** start screen whose wordmark and button glow
   with a halo that cycles through the colour wheel (pure CSS, one animated
   filter; for guests whose phone asks for reduced motion it still changes colour,
-  at half speed, without the wordmark's pulse: nothing on it moves). Tap to start → full screen, screen kept awake, WebSocket opened.
+  at half speed, without the wordmark's pulse: nothing on it moves). Under
+  the button: a flashing-lights notice and "by tapping start you agree to the
+  [terms & privacy](#terms--privacy-page)" (`/terms`), and, on phones whose
+  browser can switch the flash, a box asking the guest to tap **Allow** when
+  the phone asks for the camera. Tap to start → full screen, screen kept awake, WebSocket opened.
   Each colour arrives as 7 bytes (R, G, B + when to show it; 3 more bytes
-  per extra cell) and is painted at that moment (see
+  per extra cell, 1 more with the [phone flash](#phone-flash-camera-torch) on) and is painted at that moment (see
   [Keeping phones in sync](#keeping-phones-in-sync)). The first 8 characters
   of the phone's client id (as on the admin Clients page) are printed small in the bottom-right
   corner: white on the start screen, black once the show is running.
@@ -206,6 +211,9 @@ cd ~/PhoneLight && ./install.sh && ./start.sh
    6 channels) from the *Start address* in one universe. With cells, patch
    each as a multi-cell RGB fixture (pixel bar) of *Cells per fixture*
    cells: cells × 3 channels (× 6 in 16-bit), cell 1 first, no dimmer channel.
+   With *Phone flash* on, each fixture has one more channel after its
+   colours: the flash (128+ = on). Patch it as a generic dimmer / strobe
+   channel or add it to the fixture profile.
 2. Set that universe to output **sACN unicast** to the PhoneLight server's IP
    (no multicast needed; PhoneLight does not join multicast groups).
 3. On the admin **Settings** page set the same universe, start address,
@@ -221,17 +229,18 @@ same priority to merge them HTP.
 
 | Page | What it shows / does |
 |---|---|
-| **Live** | Phones connected, average round-trip latency, output frames/s, sACN rate; a live swatch per fixture with its phone count (with cells, laid out like the phones' screens). Output buttons: **Live sACN**, **Identify** (every fixture a different colour, to check groups), **Blackout**, **Rebalance groups**. A **warning** appears when phones sit in a fixture group whose channels have stayed at 0 since sACN started: almost always a patch problem (the group isn't in the cue). **Test tools:** manual colour (all fixtures, click one fixture, or click one cell) and patterns (chase / flash / rainbow); see [Testing without a console](#testing-without-a-console). Overrides and tests are not saved: a restart goes back to Live sACN. |
+| **Live** | Phones connected, average round-trip latency, output frames/s, sACN rate; a live swatch per fixture with its phone count (with cells, laid out like the phones' screens). Output buttons: **Live sACN**, **Identify** (every fixture a different colour, to check groups), **Blackout**, **Rebalance groups**. A **warning** appears when phones sit in a fixture group whose channels have stayed at 0 since sACN started: almost always a patch problem (the group isn't in the cue). **Test tools:** manual colour (all fixtures, click one fixture, or click one cell), **Flash on / off** (with *Phone flash* on; ⚡ on a swatch = its flash is on) and patterns (chase / flash / rainbow); see [Testing without a console](#testing-without-a-console). Overrides and tests are not saved: a restart goes back to Live sACN. |
 | **sACN monitor** | Listening address, packet counts, every source (name, IP, priority, fps, out-of-order packets, CID), the 512 levels (fixture channels outlined R/G/B; hover a cell for fixture and colour). **Timing** (see [Finding a delay](#finding-a-delay)): how long packets waited before the app read them, how long the app took to hand the colours to the phones, and stale packets skipped. |
-| **Clients** | Phones connected now (fixture, IP, device, OS, browser, connected time, last and average latency), each with **Kick** / **Block** / **Block IP**. **Blocked** list (add by client id or IP, with a note; *Unblock*). Client log: every browser seen, visits, total time, average latency, device details; click one for its sessions, or *Block* it. *Clear log* deletes the history. See [Blocking a device](#blocking-a-device). |
-| **Settings** | Universe, start address, fixtures, 8/16-bit, cells per fixture and their columns, master dimmer, sync delay, signal-loss hold and fade, how long client data is kept. Applied live, no restart. |
+| **Clients** | Phones connected now (fixture, IP, device, OS, browser, connected time, last and average latency, ⚡ when its flash is ready), each with **Kick** / **Block** / **Block IP**. **Blocked** list (add by client id or IP, with a note; *Unblock*). Client log: every browser seen, visits, total time, average latency, device details; click one for its sessions, or *Block* it. *Clear log* deletes the history. See [Blocking a device](#blocking-a-device). |
+| **Settings** | Universe, start address, fixtures, 8/16-bit, cells per fixture and their columns, phone flash and its longest-on time, master dimmer, sync delay, signal-loss hold and fade, how long client data is kept. Applied live, no restart. |
 
 The header always shows the sACN state, how many phones are connected and,
 in amber, any active override.
 
 **On a phone:** long-press anywhere on the colour (0.7 s) for a status
 readout that disappears after 6 s: its fixture, connected or reconnecting,
-round trip, sync accuracy, frames per second, current colour and the first
+round trip, sync accuracy, frames per second, current colour, the flash
+(on / off / off by the time limit / not allowed / not on this phone) and the first
 characters of its client id (to find it on the Clients page). Handy for
 checking a phone in the crowd without the admin.
 
@@ -275,6 +284,9 @@ They are generated inside the server and go only to the phones:
   With cells the chase steps through every cell (fixture 1 cell 1 first) and
   the rainbow spreads over every cell.
   A flash is the easiest way to see whether phones are changing in sync.
+  With *Phone flash* on, the flash pattern flashes the camera flashes too.
+- **Flash on / off** (with *Phone flash* on): the camera flash of every
+  fixture, or of the last fixture clicked; switches to manual colour.
 
 The header shows **TEST** in amber while either is active; *Live sACN* hands
 the phones back to the console.
@@ -293,6 +305,47 @@ delay) and the **sync spread** between phones. It puts the show back on
 Live sACN when it finishes, so don't run it during a show. Without
 `--drive` it just measures whatever is playing (the console or a test
 pattern). Run it from a second machine to include the real network.
+
+## Phone flash (camera torch)
+
+Phones can switch their **camera flash** with the show as well as their
+screen. Turn on *Phone flash* in Settings: every fixture then has one more
+channel, after its colour channels, and 128 or more turns its phones'
+flashes on. It is on/off only (no browser can dim a flash).
+
+How it works: a web page can only reach the flash through a live camera, so
+when the show uses the flash the page opens the rear camera (after the
+guest taps **Allow** on the phone's permission prompt) and switches its
+torch. No frame is ever shown, read or sent; the camera is closed again
+when *Phone flash* is turned off. The phone's camera-in-use indicator is on
+meanwhile, which is why the start screen and the terms say so. A guest who
+taps *Don't allow* still gets the screen. The Clients page shows ⚡ for each
+phone whose flash is ready; the Live page counts them.
+
+- **HTTPS only.** Browsers give a page the camera only over HTTPS, so phones
+  that join through the gateway (glow.lighting) get the flash; phones on the
+  plain `http://server:5420` address just don't offer it.
+- **Which phones.** Chrome on Android, on most phones. iPhones: Safari's
+  support for this is new and patchy, so the page only asks where the
+  browser says it can, and drops it if the camera has no torch. Try your
+  own phones before relying on it.
+- **Slower than the screen.** Switching a torch takes tens to a few hundred
+  ms depending on the phone. The flash keeps the frame's show-at time, but
+  expect a looser sync than the colours: use it for hits and slow pulses,
+  not fast chases.
+- **Flash longest on (s)** (default 10): a phone switches its flash off by
+  itself after this long on, until the channel goes off again, for guests'
+  batteries and phones' heat. 0 = no limit.
+- The master dimmer at 0, Blackout, Identify and a lost signal (once faded
+  out) turn flashes off.
+
+## Terms & privacy page
+
+`/terms` (linked from the start screen; tapping start counts as agreeing):
+the flashing-lights warning, what the page does, the camera permission,
+what is logged and for how long (it follows *Keep client data*), being
+considerate with the flash, and an "as is" note. Have the venue's legal team
+read it before a public show; it is in `server/templates/terms.html`.
 
 ## Keeping phones in sync
 
@@ -356,6 +409,10 @@ bridges, tunnels).
 
 ## Performance
 
+**Phone flash (0.10.0):** 1000 phones (4 processes × 250) with the flash
+on (8-byte frames): 40 frames/s on every phone, change → arrival median
+13.3 ms, spread median 6.4 ms, the same as without it.
+
 **Cells (0.7.0):** 1000 phones with 6 cells each (22-byte frames) ran the
 same as 1 cell: 40 frames/s on every phone, ~105 MB, change → arrival
 median 12 ms, spread median 6 ms, all within run-to-run noise of the code
@@ -397,7 +454,9 @@ actually learn about a phone:
 **MAC addresses are not available** to a web page or a web server on a routed
 network, and modern phones randomise them per Wi-Fi network anyway. Rows not
 seen for *Keep client data (days)* (default 30) are deleted hourly; *Clear
-log* on the Clients page deletes them all.
+log* on the Clients page deletes them all. Whether a phone's flash is ready
+is shown live on the Clients page only; it is not stored. The camera is never
+read (see [Phone flash](#phone-flash-camera-torch)).
 
 ## Configuration (.env)
 
@@ -506,7 +565,7 @@ server/
   settings.py    show settings: definitions, validation, live apply
   blocks.py      blocked devices (client id / IP), checked on connect
   db.py          SQLite access     migrate.py + migrations/   schema
-  templates/     guest.html (the phone page) + admin pages
+  templates/     guest.html (the phone page), terms.html (/terms) + admin pages
   static/        admin CSS/JS, bundled fonts, keepawake.mp4
 tools/           load_test.py (simulated phones; no sACN sender, on purpose)
 ```
@@ -530,6 +589,8 @@ The guest path never touches the database, so nothing on it changes.
   trick as the NoSleep.js library; not yet tried on real phones here, so
   check on a few iPhones and Androids before a show). With HTTPS the Wake
   Lock API is used first.
+- **Phone flash needs HTTPS** and a browser that can switch the torch
+  (Android Chrome; iPhone patchy). See [Phone flash](#phone-flash-camera-torch).
 - **iPhone full screen.** iOS Safari has no full-screen API for pages; the
   address bar stays unless the guest adds the page to the home screen. The
   colour still fills the page.
