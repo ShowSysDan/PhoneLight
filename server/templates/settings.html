@@ -12,7 +12,7 @@
       <label for="f-{{ key }}">{{ d.label }}</label>
       {% if d.choices %}
       <select id="f-{{ key }}" name="{{ key }}">
-        {% for c in d.choices %}<option value="{{ c }}" {{ 'selected' if values[key] == c }}>{{ c }}-bit</option>{% endfor %}
+        {% for c in d.choices %}<option value="{{ c }}" {{ 'selected' if values[key] == c }}>{{ d.names[loop.index0] }}</option>{% endfor %}
       </select>
       {% else %}
       <input id="f-{{ key }}" name="{{ key }}" type="number" min="{{ d.min }}" max="{{ d.max }}"
@@ -36,9 +36,9 @@
   const form = $('form');
   function footprint() {
     const f = +form.fixtures.value, cells = +form.cells.value, start = +form.start_address.value;
-    const per = (+form.bit_depth.value === 16 ? 6 : 3) * cells, last = start + f * per - 1;
+    const flash = +form.flash.value, per = (+form.bit_depth.value === 16 ? 6 : 3) * cells + flash, last = start + f * per - 1;
     $('footprint').textContent = `Fixtures use channels ${start}–${last} (${f} × ${per} ch` +
-      (cells > 1 ? `: ${cells} cells each` : '') + ')' + (last > 512 ? ' — past 512!' : '');
+      (cells > 1 ? `: ${cells} cells each` : '') + (flash ? ', the last one the flash' : '') + ')' + (last > 512 ? ' — past 512!' : '');
   }
   form.oninput = footprint;
   footprint();

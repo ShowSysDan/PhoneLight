@@ -85,7 +85,7 @@ def receive_color(ws, want, timeout=3):
 
 def test_pages(server):
     status, body = get(server, '/')
-    assert status == 200 and b'/ws' in body and len(body) < 10000
+    assert status == 200 and b'/ws' in body and len(body) < 13000
     assert b'<div id="n"></div>' in body and b"nid.textContent=id.slice(0,8)" in body   # short client id, bottom right
     for path in ('/admin', '/admin/sacn', '/admin/clients', '/admin/settings', '/static/keepawake.mp4'):
         assert get(server, path)[0] == 200
@@ -273,3 +273,40 @@ def test_tracker_totals_and_orphans(env):
     assert db.query("SELECT close_reason FROM sessions WHERE id = 'sess2'")[0]['close_reason'] == 'server restart'
     assert tracker.purge(now=time.time() + 400 * 86400) == 1
     assert db.query('SELECT COUNT(*) AS n FROM sessions')[0]['n'] == 0
+
+
+def test_terms_page(server):
+    status, body = get(server, '/terms')
+    assert status == 200 and b'Flashing lights' in body and b'camera' in body and b'deleted after 30 days' in body
+    status, body = get(server, '/')
+    assert b'href="/terms"' in body
+
+
+def test_flash_to_phone(server):
+    assert post(server, '/admin/api/settings', {'fixtures': 1, 'bit_depth': 8, 'start_address': 1,
+                                                'cells': 1, 'cell_columns': 1, 'flash': 1, 'flash_max': 5})[0] == 200
+    ws = Client.connect(server['base'].replace('http', 'ws') + '/ws')
+    try:
+        ws.send(json.dumps({'id': 'integration-test-flash'}))
+        assert ws.receive(timeout=3) == 'f1' and ws.receive(timeout=3) == 'l1,1,5'
+        ws.send('t1')
+        data = bytearray(512)
+        data[0:4] = b'\x10\x20\x30\xc8'
+        send_sacn(server, data, 30)
+        assert receive_color(ws, b'\x10\x20\x30\xff')
+        adm = Client.connect(server['base'].replace('http', 'ws') + '/ws/admin')
+        try:
+            adm.send(json.dumps({'views': ['guests']}))
+            for _ in range(20):
+                snap = json.loads(adm.receive(timeout=1))
+                if 'guests' in snap:
+                    break
+            assert snap['guests']['torch'] == 1 and snap['engine']['flash'] == [True]
+        finally:
+            adm.close()
+        assert post(server, '/admin/api/mode', {'mode': 'color', 'flash': False})[0] == 200
+        assert receive_color(ws, b'\x10\x20\x30\x00')
+    finally:
+        ws.close()
+        post(server, '/admin/api/mode', {'mode': 'sacn'})
+        post(server, '/admin/api/settings', {'flash': 0})

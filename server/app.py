@@ -35,7 +35,7 @@ class Runtime:
 
     def __init__(self):
         v = settings.current()
-        self.hub = Hub(v['fixtures'], v['cells'], v['cell_columns'])
+        self.hub = Hub(v['fixtures'], v['cells'], v['cell_columns'], _flash(v))
         self.hub.delay_ms = v['sync_delay']
         self.hub.max_per_ip = max(0, config.get_int('MAX_PER_IP', 0))
         self.hub.per_ip_exempt = proxy.networks(config.get('MAX_PER_IP_EXEMPT', ''))
@@ -51,8 +51,8 @@ class Runtime:
         self.hub.delay_ms = new['sync_delay']
         if new['fixtures'] != old['fixtures']:
             self.hub.resize(new['fixtures'])
-        if (new['cells'], new['cell_columns']) != (old['cells'], old['cell_columns']):
-            self.hub.set_layout(new['cells'], new['cell_columns'])
+        if (new['cells'], new['cell_columns'], _flash(new)) != (old['cells'], old['cell_columns'], _flash(old)):
+            self.hub.set_layout(new['cells'], new['cell_columns'], _flash(new))
         if new['universe'] != old['universe']:
             self.receiver.universe_changed()
         self.engine.recompute()
@@ -65,6 +65,11 @@ class Runtime:
         self.engine.start()
         self.hub.start()
         self.writer.start()
+
+
+def _flash(v):
+    """The hub's flash: None = off, else the longest-on seconds."""
+    return v['flash_max'] if v['flash'] else None
 
 
 def _sacn_allow():
@@ -182,6 +187,11 @@ def create_app(start=True):
     def guest():
         return guest_page, 200, {'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache'}
 
+    @app.get('/terms')
+    def terms():
+        return render_template('terms.html', **settings.current()), 200, \
+            {'Cache-Control': 'no-cache'}
+
     @app.get('/healthz')
     def healthz():
         if request.environ.get('phonelight.via_proxy'):
@@ -235,6 +245,8 @@ def create_app(start=True):
                         guest.pong(msg)
                     elif msg[:1] == 's':
                         rt.hub.sync_request(guest, msg)
+                    elif msg[:1] == 't':
+                        rt.hub.torch(guest, msg)
         except ConnectionClosed:
             pass
         finally:
@@ -262,7 +274,7 @@ def create_app(start=True):
     # ── admin API ──────────────────────────────────────────────────────────
     @app.post('/admin/api/mode')
     def api_mode():
-        """{mode, color?: '#rrggbb', fixture?: n, cell?: n, pattern?, rate?} -> the Live page's
+        """{mode, color?: '#rrggbb', fixture?: n, cell?: n, flash?: bool, pattern?, rate?} -> the Live page's
         output and test tools (all made inside the engine; nothing is sent as sACN)."""
         body = request.get_json(silent=True) or {}
         color = None
@@ -277,12 +289,13 @@ def create_app(start=True):
             fixture = int(body['fixture']) if body.get('fixture') is not None else None
             cell = int(body['cell']) if body.get('cell') is not None else None
             rate = float(body['rate']) if body.get('rate') is not None else None
-            rt.engine.set_mode(body.get('mode', 'sacn'), color, fixture, body.get('pattern'), rate, cell)
+            flash = bool(body['flash']) if body.get('flash') is not None else None
+            rt.engine.set_mode(body.get('mode', 'sacn'), color, fixture, body.get('pattern'), rate, cell, flash)
         except (TypeError, ValueError) as exc:
             return jsonify(error=str(exc)), 400
         if not body.get('quiet'):
             log.info('mode -> %s %s', rt.engine.mode,
-                     {k: body[k] for k in ('color', 'fixture', 'cell', 'pattern', 'rate') if k in body})
+                     {k: body[k] for k in ('color', 'fixture', 'cell', 'flash', 'pattern', 'rate') if k in body})
         return jsonify(rt.engine.snapshot())
 
     @app.post('/admin/api/rebalance')

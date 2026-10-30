@@ -32,6 +32,9 @@ Cells: a fixture can have several cells (Settings), each its own RGB; each
 of its phones splits its screen into them. The frame then carries every
 cell's RGB, still one frame per fixture.
 
+Flash (the Phone flash setting): the frame carries one more byte after the
+colours, 255 = camera flash on, 0 = off. The layout message says so.
+
 Wire format (kept tiny on purpose):
   server -> guest   binary          R, G, B for each cell (cell 1 first; 1 cell = 3 bytes)
                                     + show-at server ms (uint32 BE, mod 2^32): 7 bytes with 1 cell
@@ -39,6 +42,8 @@ Wire format (kept tiny on purpose):
                     text 'f<n>'     your fixture is n (kept for reconnects)
                     text 'l<cells>,<columns>'  screen layout: that many cells, that many side
                                     by side, the rest in rows below (sent before colours)
+                    text 'l<cells>,<columns>,<max>'  the same, and frames carry the flash byte;
+                                    max: seconds a phone keeps its flash on at most (0 = no limit)
                     text 'x'        you are blocked: the server closes, don't reconnect
                     text 'k'        you were disconnected by the admin (reconnect as usual)
                     text 's<c0>,<t1>,<t2>'  clock sync reply: the guest's send time
@@ -46,6 +51,7 @@ Wire format (kept tiny on purpose):
   guest -> server   text JSON       hello (first message): id + device info
                     text 'p<n>'     pong
                     text 's<c0>'    clock sync request (c0: its performance.now())
+                    text 't1' / 't0'  its camera flash is ready / not (any more)
 """
 import random
 import re
@@ -66,8 +72,9 @@ def server_ms():
 
 
 def frame(rgb, show_at=0):
-    """Colours (3 bytes per cell, at most 40 cells) + show-at server ms -> a
-    whole WebSocket frame (FIN + binary, one-byte length). A show-at in the
+    """Colours (3 bytes per cell, at most 40 cells, + the flash byte) +
+    show-at server ms -> a whole WebSocket frame (FIN + binary, one-byte
+    length: 40 cells + flash + 4 = 125, the most it holds). A show-at in the
     past (or 0) means "now"."""
     return b'\x82' + bytes((len(rgb) + 4,)) + rgb + (int(show_at) & 0xFFFFFFFF).to_bytes(4, 'big')
 
@@ -79,7 +86,7 @@ _SYNC = re.compile(r'^s\d{1,12}(\.\d{1,4})?$')
 class Guest:
     __slots__ = ('sid', 'client_id', 'ip', 'info', 'fixture', 'told', 'told_layout', 'connected_at', 'raw', 'wake',
                  'closer', 'dirty', 'busy', 'busy_since', 'pending', 'ping_seq', 'ping_at', 'last_pong',
-                 'lat_n', 'lat_sum', 'lat_min', 'lat_max', 'lat_last', 'alive', 'why', 'sync', 'bye')
+                 'lat_n', 'lat_sum', 'lat_min', 'lat_max', 'lat_last', 'alive', 'why', 'sync', 'bye', 'torch')
 
     def __init__(self, sid, client_id, ip, info, raw=None, closer=None):
         self.sid, self.client_id, self.ip, self.info = sid, client_id, ip, info
@@ -95,6 +102,7 @@ class Guest:
         self.alive, self.why = True, None   # why: set when the server ends it
         self.sync = None                    # (c0 text, t1) of an unanswered sync request
         self.bye = None                     # last message before the server closes ('x' / 'k'), see Hub.kick
+        self.torch = False                  # its camera flash is ready ('t1')
 
     def pong(self, text, now=None):
         """Record a pong; returns the round trip in ms or None."""
@@ -142,12 +150,13 @@ def _write_now(g, fr):
 
 
 class Hub:
-    def __init__(self, fixtures, cells=1, columns=1):
+    def __init__(self, fixtures, cells=1, columns=1, flash=None):
         self.lock = threading.Lock()
         self.guests = {}                          # sid -> Guest
         self.members = [set() for _ in range(fixtures)]
-        self.layout = (cells, columns)
-        self.black = frame(bytes(3 * cells))
+        self.layout = (cells, columns, flash)     # flash: None = off, else its longest-on seconds
+        self.width = 3 * cells + (flash is not None)   # bytes per fixture from the engine
+        self.black = frame(bytes(self.width))
         self.frames = [self.black] * fixtures    # pre-built colour frame per fixture
         self.total_connects = 0
         self.delay_ms = 0                         # Sync delay (settings), see module doc
@@ -202,14 +211,16 @@ class Hub:
             self.frames = (self.frames + [self.black] * fixtures)[:fixtures]
         self.rebalance()
 
-    def set_layout(self, cells, columns):
-        """New cell count / columns: every phone is told, then gets its colours
-        again (black until the engine publishes the new size)."""
+    def set_layout(self, cells, columns, flash=None):
+        """New cell count / columns / flash: every phone is told, then gets its
+        colours again (black until the engine publishes the new size)."""
         with self.lock:
-            if cells != self.layout[0]:
-                self.black = frame(bytes(3 * cells))
+            width = 3 * cells + (flash is not None)
+            if width != self.width:
+                self.width = width
+                self.black = frame(bytes(width))
                 self.frames = [self.black] * len(self.frames)
-            self.layout = (cells, columns)
+            self.layout = (cells, columns, flash)
             guests = list(self.guests.values())
             for g in guests:
                 g.dirty = True
@@ -234,7 +245,7 @@ class Hub:
         """Engine output -> every guest whose fixture changed (see module doc)."""
         slow, show_at = [], None
         with self.lock:
-            if len(colors) != len(self.members) or len(colors[0]) != 3 * self.layout[0]:
+            if len(colors) != len(self.members) or len(colors[0]) != self.width:
                 return                        # mid-resize; the engine republishes after it
             layout = self.layout
             for i, rgb in enumerate(colors):
@@ -291,7 +302,8 @@ class Hub:
             return f'f{guest.fixture + 1}'
         if guest.told_layout != self.layout:
             guest.told_layout = layout = self.layout
-            return f'l{layout[0]},{layout[1]}'
+            cells, columns, flash = layout
+            return f'l{cells},{columns}' if flash is None else f'l{cells},{columns},{flash:g}'
         if guest.dirty:
             guest.dirty = False
             frames = self.frames
@@ -307,6 +319,10 @@ class Hub:
         if _SYNC.match(text):
             guest.sync = (text[1:], server_ms())
             guest.wake.set()
+
+    def torch(self, guest, text):
+        """'t1' / 't0' from the guest's reader: its flash is ready or not."""
+        guest.torch = text == 't1'
 
     def is_dead(self, guest, now=None):
         now = now or time.monotonic()
@@ -363,11 +379,11 @@ class Hub:
         lats = [g.latency_avg() for g in guests if g.lat_n]
         return dict(
             connected=len(guests), total_connects=self.total_connects, counts=self.counts(),
-            refused_full=self.refused_full,
+            refused_full=self.refused_full, torch=sum(g.torch for g in guests),
             latency_avg=round(sum(lats) / len(lats), 1) if lats else None,
             guests=[dict(sid=g.sid, client_id=g.client_id, ip=g.ip, fixture=g.fixture + 1,
                          device=g.info.get('device'), os=g.info.get('os'), browser=g.info.get('browser'),
-                         seconds=round(now - g.connected_at),
+                         seconds=round(now - g.connected_at), torch=g.torch,
                          latency=round(g.lat_last, 1) if g.lat_last is not None else None,
                          latency_avg=round(g.latency_avg(), 1) if g.lat_n else None)
                     for g in sorted(guests, key=lambda g: g.connected_at, reverse=True)[:limit]])

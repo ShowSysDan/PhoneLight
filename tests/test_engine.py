@@ -187,3 +187,48 @@ def test_settings_cells_footprint(env):
     assert settings.save({'fixtures': 28, 'cells': 6, 'start_address': 1})['cells'] == 6
     with pytest.raises(ValueError):
         settings.save({'cells': 41})
+
+
+@pytest.fixture
+def flash_eng(env):
+    settings.save({'fixtures': 2, 'cells': 1, 'cell_columns': 1, 'master': 100, 'flash': 1})
+    out = []
+    return engine.Engine(out.append), out
+
+
+def test_flash_footprint(env):
+    settings.save({'fixtures': 2, 'cells': 2, 'bit_depth': 16, 'flash': 1})
+    assert settings.channels_per_fixture() == 13
+    with pytest.raises(ValueError):                           # 40 × 13 = 520, past 512
+        settings.save({'fixtures': 40})
+
+
+def test_flash_from_sacn(flash_eng):
+    e, out = flash_eng
+    e.on_frame(lv(1, 2, 3, 128, 4, 5, 6, 127), True)          # R G B flash, per fixture
+    assert out[-1] == [b'\x01\x02\x03\xff', b'\x04\x05\x06\x00']
+    snap = e.snapshot()
+    assert snap['fixtures'] == [['#010203'], ['#040506']] and snap['flash'] == [True, False]
+    settings.save({'master': 0})
+    e.recompute()
+    assert out[-1] == [bytes(4)] * 2                          # master 0: the flash goes off too
+    settings.save({'master': 100, 'flash': 0})
+    e.recompute()
+    assert out[-1] == [b'\x01\x02\x03', b'\x80\x04\x05'] and e.snapshot()['flash'] is None
+
+
+def test_flash_test_modes(flash_eng):
+    e, out = flash_eng
+    red = b'\xff\x00\x00'
+    e.set_mode('color', red, flash=True)
+    assert out[-1] == [red + b'\xff'] * 2
+    e.set_mode('color', flash=False, fixture=2)
+    assert out[-1] == [red + b'\xff', red + b'\x00']
+    e.set_mode('color', b'\x00\x00\xff', fixture=1)          # a colour change keeps the flash
+    assert out[-1] == [b'\x00\x00\xff\xff', red + b'\x00']
+    e.set_mode('identify')
+    assert all(c[3] == 0 for c in out[-1])
+    e.set_mode('pattern', red, pattern='flash', rate=1)
+    assert out[-1] == [red + b'\xff'] * 2                     # the flash pattern flashes it too
+    e.set_mode('blackout')
+    assert out[-1] == [bytes(4)] * 2

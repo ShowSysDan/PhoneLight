@@ -27,6 +27,8 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none
 @keyframes breathe{from{opacity:.86}to{opacity:1}}
 @media (prefers-reduced-motion:reduce){ #go:before,#w,#go button{animation:hue 12s linear infinite} }
 #go small{max-width:340px;color:#999;font-size:12px}
+#go a{color:#ccc}
+#cam{max-width:320px;padding:10px 14px;border:1px solid rgba(255,255,255,.3);border-radius:12px;color:#ddd;font-size:14px}
 #i{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);padding:10px 14px;border-radius:10px;background:rgba(0,0,0,.78);
   color:#fff;font:12px/1.6 ui-monospace,Menlo,monospace;white-space:pre;text-align:left;pointer-events:none}
 #n{position:fixed;right:6px;bottom:calc(4px + env(safe-area-inset-bottom));color:#fff;opacity:.6;font:10px ui-monospace,Menlo,monospace;pointer-events:none}
@@ -37,9 +39,12 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none
 <div id="go">
 <h1 id="w">glow<i>.lighting</i></h1>
 <div>Turn your brightness up, then tap to join the light show.</div>
+<div id="cam" hidden>If your phone asks to use the camera, tap <b>Allow</b>: your flash becomes part of the show too.
+It only switches the flash; nothing is recorded or sent.</div>
 <button id="b">Tap to start</button>
-<small>To run the show this page logs basic technical details about your device (IP address, browser,
-screen size, language, time zone) and how long you are connected. Nothing personal is asked for or stored.</small>
+<small>Flashing lights. By tapping start you agree to the <a href="/terms">terms &amp; privacy</a>. To run the show
+this page logs basic technical details about your device (IP address, browser, screen size, language, time zone)
+and how long you are connected. Nothing personal is asked for or stored.</small>
 </div>
 <div id="s"></div>
 <div id="n"></div>
@@ -60,6 +65,28 @@ var ws,tries=0,blackT,lockS,last=0,syncT,nsync=0,gone;
 var off=null,samples=[],q=[],now=function(){return performance.now()};
 // Cells: the screen is a grid of ncell cells, per side by side (the 'l' message), cell 1 top left.
 var cells=[],shown=[],ncell=0,per=0,want=0;
+// Camera flash (Phone flash setting; 'l' with a 3rd field): only a live rear-camera track can switch it,
+// so while the show uses it the page holds the camera open (never shown, read or sent). The flash goes
+// off by itself after flmax s on (0 = never) until the show turns it off. asked: -1 = refused, don't ask.
+var md=navigator.mediaDevices,canT=!!(md&&md.getUserMedia&&md.getSupportedConstraints&&md.getSupportedConstraints().torch&&navigator.maxTouchPoints);
+var fl=0,flmax=0,trk=null,tOn=false,tAt=0,tCap=false,tWant=false,asked=0,opening=0;
+document.getElementById('cam').hidden=!canT;
+function tsay(){if(ws&&ws.readyState==1)ws.send(trk?'t1':'t0')}
+function camOpen(){
+  if(!canT||!fl||trk||opening||asked<0||document.visibilityState!='visible')return;opening=1;
+  md.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false}).then(function(st){
+    opening=0;var t=st.getVideoTracks()[0],cap=t&&t.getCapabilities?t.getCapabilities():{};
+    if(!t||!cap.torch)canT=false;
+    if(!canT||!fl){st.getTracks().forEach(function(x){x.stop()});return}
+    trk=t;tOn=false;asked=1;t.onended=function(){if(trk===t){trk=null;tOn=false;tsay()}};tsay();torch(tWant);
+  },function(e){opening=0;if(!e||e.name!='NotReadableError')asked=-1});
+}
+function camClose(){if(trk){trk.stop();trk=null;tOn=false;tsay()}}
+function torch(want){
+  if(!want)tCap=false;tWant=!!want;var on=tWant&&!tCap;
+  if(!trk||on===tOn)return;tOn=on;tAt=now();
+  trk.applyConstraints({advanced:[{torch:on}]}).catch(function(){});
+}
 function layout(n,k){
   if(n==ncell&&k==want)return;ncell=n;want=k;per=Math.max(1,Math.min(k,n));c.innerHTML='';cells=[];shown=[];
   c.style.gridTemplateColumns='repeat('+per+',1fr)';c.style.gridTemplateRows='repeat('+Math.ceil(n/per)+',1fr)';
@@ -67,7 +94,7 @@ function layout(n,k){
 }
 layout(1,1);
 function paint(cs){for(var i=0;i<cs.length&&i<ncell;i++)if(cs[i]!==shown[i]){shown[i]=cs[i];cells[i].style.background=cs[i]}}
-function black(){q=[];var cs=[];for(var i=0;i<ncell;i++)cs.push('#000');paint(cs)}
+function black(){q=[];var cs=[];for(var i=0;i<ncell;i++)cs.push('#000');paint(cs);torch(false)}
 function sync(){if(ws&&ws.readyState==1)ws.send('s'+now().toFixed(1));syncT=setTimeout(sync,++nsync<6?150:4000)}
 function synced(d){
   var p=d.slice(1).split(','),c0=+p[0],t1=+p[1],t2=+p[2],c3=now();
@@ -77,15 +104,19 @@ function synced(d){
 var nframes=0,fx='';
 function frame(b){
   nframes++;
-  var n=(b.length-4)/3|0,col=[],j=n*3;if(n<1)return;
+  var n=(b.length-4-fl)/3|0,col=[],j=n*3,f=!!(fl&&b[j]),k=j+fl;if(n<1)return;
   if(n!=ncell)layout(n,want||1);
   for(var i=0;i<j;i+=3)col.push('rgb('+b[i]+','+b[i+1]+','+b[i+2]+')');
-  if(off===null){q=[];return paint(col)}
-  var at=((b[j]<<24|b[j+1]<<16|b[j+2]<<8|b[j+3])>>>0),wait=(at-(Math.round(now()+off)>>>0))|0;
-  if(wait<=0||wait>2000){q=[];return paint(col)}   // late (or nonsense): show now, it is the newest
-  q.push([now()+wait,col]);if(q.length>64)q.shift();
+  if(off===null){q=[];paint(col);return torch(f)}
+  var at=((b[k]<<24|b[k+1]<<16|b[k+2]<<8|b[k+3])>>>0),wait=(at-(Math.round(now()+off)>>>0))|0;
+  if(wait<=0||wait>2000){q=[];paint(col);return torch(f)}   // late (or nonsense): show now, it is the newest
+  q.push([now()+wait,col,f]);if(q.length>64)q.shift();
 }
-function tick(){var t=now(),col=null;while(q.length&&q[0][0]<=t)col=q.shift()[1];if(col)paint(col);requestAnimationFrame(tick)}
+function tick(){
+  var t=now(),e=null;while(q.length&&q[0][0]<=t)e=q.shift();if(e){paint(e[1]);torch(e[2])}
+  if(tOn&&flmax>0&&t-tAt>flmax*1000){tCap=true;torch(tWant)}
+  requestAnimationFrame(tick);
+}
 function hello(){
   var n=navigator,cn=n.connection||{},f=parseInt(get('pl_fx'),10);
   return JSON.stringify({id:id,fixture:f>0?f:undefined,sw:screen.width,sh:screen.height,dpr:window.devicePixelRatio||1,
@@ -96,13 +127,14 @@ function hello(){
 function connect(){
   ws=new WebSocket((location.protocol=='https:'?'wss://':'ws://')+location.host+'/ws');
   ws.binaryType='arraybuffer';
-  ws.onopen=function(){tries=0;last=Date.now();clearTimeout(blackT);st.textContent='';ws.send(hello());
+  ws.onopen=function(){tries=0;last=Date.now();clearTimeout(blackT);st.textContent='';ws.send(hello());if(trk)tsay();
     samples=[];off=null;nsync=0;clearTimeout(syncT);sync()};
   ws.onmessage=function(e){
     var d=e.data;last=Date.now();
     if(typeof d!='string')return frame(new Uint8Array(d));
     if(d=='x')gone=1;else if(d[0]=='p')ws.send(d);else if(d[0]=='s')synced(d);else if(d[0]=='f'){fx=d.slice(1);put('pl_fx',fx)}
-    else if(d[0]=='l'){var p=d.slice(1).split(',');if(+p[0]>0)layout(+p[0],+p[1]||1)}
+    else if(d[0]=='l'){var p=d.slice(1).split(',');if(+p[0]>0)layout(+p[0],+p[1]||1);
+      fl=p.length>2?1:0;flmax=fl?+p[2]||0:0;if(fl)camOpen();else camClose()}
   };
   ws.onclose=function(){
     ws=null;clearTimeout(syncT);clearTimeout(blackT);if(gone){black();st.textContent='This device can\u2019t join the show.';return}blackT=setTimeout(black,3000);st.textContent='reconnecting…';
@@ -129,7 +161,8 @@ function status(){
   var up=ws&&ws.readyState==1,fps=nframes-fr0;fr0=nframes;
   info.textContent='glow.lighting\nfixture '+(fx||'?')+' \u00b7 '+(up?'connected':'reconnecting')+
     '\nround trip '+(b?Math.round(b[0])+' ms':'\u2013')+' \u00b7 sync '+(off===null?'not yet':'\u00b1'+Math.max(1,Math.round(b[0]/2))+' ms')+
-    '\n'+fps*2+' frames/s \u00b7 '+shown[0]+(ncell>1?' (cell 1 of '+ncell+')':'')+'\nid '+id.slice(0,8);
+    '\n'+fps*2+' frames/s \u00b7 '+shown[0]+(ncell>1?' (cell 1 of '+ncell+')':'')+
+    '\nflash '+(trk?(tOn?'on':tCap?'off (time limit)':'off'):!canT?'not on this phone':!fl?'not used':asked<0?'not allowed':'\u2013')+'\nid '+id.slice(0,8);
 }
 function showInfo(){
   clearInterval(infoT);clearTimeout(hideT);fr0=nframes;status();info.hidden=false;infoT=setInterval(status,500);
@@ -144,7 +177,7 @@ document.getElementById('b').onclick=function(){
   go.style.display='none';nid.style.color='#000';lock();connect();requestAnimationFrame(tick);
 };
 document.addEventListener('visibilitychange',function(){
-  if(document.visibilityState=='visible')lock();
+  if(document.visibilityState=='visible'){lock();if(trk){tOn=null;torch(tWant)}else camOpen()}
 });
 // the server pings every 5 s: silence for 12 s means a dead socket (phone slept, Wi-Fi roamed)
 setInterval(function(){if(ws&&ws.readyState==1&&Date.now()-last>12000)ws.close()},3000);

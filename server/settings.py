@@ -16,7 +16,7 @@ DEFS = {
                           help='DMX address of fixture 1. Fixtures follow on in order.'),
     'fixtures': dict(label='Fixtures', type=int, min=1, max=170, default=3,
                      help='Guests are split evenly across this many fixtures (groups).'),
-    'bit_depth': dict(label='Fixture mode', type=int, choices=(8, 16), default=8,
+    'bit_depth': dict(label='Fixture mode', type=int, choices=(8, 16), names=('8-bit', '16-bit'), default=8,
                       help='8-bit: R G B (3 channels). 16-bit: R R-fine G G-fine B B-fine (6 channels).'),
     'cells': dict(label='Cells per fixture', type=int, min=1, max=40, default=1,
                   help='Each phone\'s screen is split into this many cells, each its own RGB (a pixel bar '
@@ -26,6 +26,14 @@ DEFS = {
                          help='How the cells sit on the screen: this many side by side, the rest in rows '
                               'below, cell 1 top left. 1 = stacked top to bottom; the same as the cell '
                               'count = side by side.'),
+    'flash': dict(label='Phone flash', type=int, choices=(0, 1), names=('Off', 'On'), default=0,
+                  help='On: each fixture gets one more channel, after its colour channels: 128 or more turns '
+                       'its phones\' camera flash on (on/off only, no dimming). Only phones whose browser can '
+                       '(most Android; iPhone varies) and whose guest allowed the camera. Slower and less '
+                       'tightly synced than the screen: use it for hits, not fast chases.'),
+    'flash_max': dict(label='Flash longest on (s)', type=float, min=0, max=600, default=10,
+                      help='A phone switches its flash off after it has been on this long, until the channel '
+                           'goes off again: saves guests\' batteries and stops phones getting hot. 0 = no limit.'),
     'master': dict(label='Master dimmer %', type=int, min=0, max=100, default=100,
                    help='Scales every colour sent to phones.'),
     'sync_delay': dict(label='Sync delay (ms)', type=int, min=0, max=1000, default=100,
@@ -48,7 +56,7 @@ _listeners = []
 
 def channels_per_fixture(values=None):
     values = values or current()
-    return (6 if values['bit_depth'] == 16 else 3) * values['cells']
+    return (6 if values['bit_depth'] == 16 else 3) * values['cells'] + values['flash']
 
 
 def _coerce(key, raw):

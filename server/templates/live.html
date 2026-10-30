@@ -31,6 +31,12 @@
     <button data-mode="color" id="all">All fixtures</button>
     <span class="dim small">or click a fixture below to give it this colour (with cells: click a cell for just that cell, the number bar for the whole fixture)</span>
   </div>
+  <div class="row" style="margin-top:12px" id="flashrow" hidden>
+    <b style="min-width:120px">Phone flash</b>
+    <button id="flash-on">Flash on</button>
+    <button id="flash-off">Flash off</button>
+    <span class="dim small">all fixtures, or the last one clicked (switches to manual colour). The flash pattern flashes it too. ⚡ = on</span>
+  </div>
   <div class="row" style="margin-top:12px">
     <b style="min-width:120px">Pattern</b>
     <select id="pattern"><option value="chase">Chase</option><option value="flash">Flash</option><option value="rainbow">Rainbow</option></select>
@@ -68,7 +74,7 @@
     tiles.length = 0;
     for (const el of $('fixtures').children) {
       tiles.push({ cells: [...el.firstChild.children].map((c) => ({ el: c, c: '' })),
-                   hex: el.lastChild.children[1], n: el.lastChild.children[2] });
+                   hex: el.lastChild.children[1], n: el.lastChild.children[2], lbl: el.lastChild.firstChild });
     }
   }
   PL.feed([], (d) => {
@@ -82,6 +88,7 @@
         if (cell && cell.c !== c) { cell.c = c; cell.el.style.background = c; }
       });
       setText(t.hex, cs.length === 1 ? cs[0] : `${cs.length} cells`);
+      setText(t.lbl, `${i + 1}${d.engine.flash && d.engine.flash[i] ? ' ⚡' : ''}`);
       setText(t.n, `${counts[i] ?? 0} 📱`);
     });
     setText($('s-guests'), String(d.connected));
@@ -91,11 +98,12 @@
     const t = d.sacn.timing || {};
     setText($('s-sacn-sub'), `universe ${d.settings.universe}, ${d.sacn.sources.length} source(s)` +
       (t.proc_avg == null ? '' : ` · app ${num((t.wait_avg || 0) + t.proc_avg, 1)} ms`));
-    setText($('fx-sub'), `${s.fixtures} × ${s.bit_depth}-bit RGB` + (s.cells > 1 ? ` × ${s.cells} cells` : '') +
+    $('flashrow').hidden = !s.flash;
+    setText($('fx-sub'), `${s.fixtures} × ${s.bit_depth}-bit RGB` + (s.cells > 1 ? ` × ${s.cells} cells` : '') + (s.flash ? ' + flash' : '') +
       ` from address ${s.start_address} · master ${s.master}%`);
     document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === d.engine.mode));
     // phones in a group whose channels have stayed at 0 since sACN came: almost always a patch problem
-    const per = (s.bit_depth === 16 ? 6 : 3) * s.cells;
+    const per = (s.bit_depth === 16 ? 6 : 3) * s.cells + s.flash;
     const unlit = (d.engine.unlit || []).filter((f) => counts[f - 1] > 0);
     $('unlit').hidden = !unlit.length || d.engine.mode !== 'sacn';
     setHTML($('unlit'), unlit.length ? '<b>Phones with nothing to show.</b> ' + unlit.map((f) => {
@@ -107,7 +115,8 @@
   PL.feed(['guests'], (d) => {
     if (!d.guests) return;
     setText($('s-latency'), d.guests.latency_avg == null ? '–' : `${num(d.guests.latency_avg)} ms`);
-    setText($('s-connects'), `${d.guests.total_connects} connects since start`);
+    setText($('s-connects'), `${d.guests.total_connects} connects since start` +
+      (d.settings && d.settings.flash ? ` · ${d.guests.torch} with flash` : ''));
   });
   const msg = (t, ok) => { $('msg').className = 'msg ' + (ok ? 'ok' : 'bad'); $('msg').textContent = t; };
   const send = (body) => api('/admin/api/mode', body).then(() => msg('', true), (e) => msg(e.message));
@@ -129,6 +138,9 @@
     send(manual());
   };
   $('all').addEventListener('click', () => { lastFixture = lastCell = null; });
+  const flash = (on) => send({ mode: 'color', flash: on, fixture: lastFixture ?? undefined });
+  $('flash-on').onclick = () => flash(true);
+  $('flash-off').onclick = () => flash(false);
   ['pattern', 'pcolor', 'rate'].forEach((id) => $(id).onchange = () => { if (isOn('pattern')) send(pattern()); });
   $('rebalance').onclick = () => api('/admin/api/rebalance', {}).then((r) => msg(`Rebalanced: ${r.counts.join(' / ')}`, true), (e) => msg(e.message));
 })();
