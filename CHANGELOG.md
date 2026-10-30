@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/). Every change
 ships as its own version: the top section always matches `VERSION`.
 
+## [0.10.3] - 2026-10-30
+
+### Changed
+- **Start screen:** the note on what is logged is gone from under the
+  button; it is on the terms & privacy page, which the start screen still
+  links ("by tapping start you agree to the terms & privacy").
+
 ## [0.10.2] - 2026-10-30
 
 ### Changed
